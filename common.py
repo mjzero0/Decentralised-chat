@@ -3,6 +3,16 @@ import uuid
 import time
 import base64
 from typing import Any, Dict
+import hashlib
+
+# ---------- In-memory tables ----------
+servers = {}         # server_id -> link (all other servers)
+server_addrs = {}    # server_id -> (host, port) (all other servers)
+local_users = {}     # user_id -> link (users belong to this server)
+user_locations = {}  # user_id -> "local" | server_id (all users)
+# Each Server MUST keep a short-term seen_ids cache for server-delivered frames (by (ts,from,to,hash(payload))) 
+# and drop duplicates.
+seen_ids = set()     # {(ts, from, to, sha256(payload))}
 
 # helper: check if string is valid UUID
 def is_valid_uuid(val: str) -> bool:
@@ -51,10 +61,46 @@ def canonical_payload(payload: Dict[str, Any]) -> str:
 def to_json(envelope: Dict[str, Any]) -> str:
     return json.dumps(envelope) + "\n"
 
+# just use a fake sign and fake verify (will change it when the voting ends)
+def fake_sign(payload: Dict[str, Any]) -> str:
+    digest = hashlib.sha256(canonical_payload(payload).encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+def fake_verify(payload: Dict[str, Any], sig: str) -> bool:
+    expected = fake_sign(payload)
+    return expected == sig
+
+def make_signed_envelope(msg_type, sender, receiver, payload):
+    env = make_envelope(msg_type, sender, receiver, payload)
+    env["sig"] = fake_sign(payload)   # use fake sign for now
+    return env
+
+# not sure - the file does not specifiy which type can omit sig
+def verify_transport_sig(env: Dict[str, Any]) -> bool:
+    # HELLO/BOOTSTRAP MAY omit sig
+    if env["type"] in ("USER_HELLO", "SERVER_HELLO_JOIN") and not env.get("sig"):
+        return True
+    if "sig" not in env or "payload" not in env:
+        return False
+    return fake_verify(env["payload"], env["sig"])
+
+def frame_fingerprint(env: Dict[str, Any]) -> str:
+    h = hashlib.sha256(canonical_payload(env["payload"]).encode()).digest()
+    return f'{env["ts"]}|{env["from"]}|{env["to"]}|{base64.urlsafe_b64encode(h).decode().rstrip("=")}'
+
+# check if it's duplicate, if is, then drop
+def drop_if_seen(env: Dict[str, Any]) -> bool:
+    fp = frame_fingerprint(env)
+    if fp in seen_ids:
+        return True
+    seen_ids.add(fp)
+    return False
+
 # --- Example usage ---
 if __name__ == "__main__":
     sender_id = str(uuid.uuid4())
     receiver_id = str(uuid.uuid4())
     payload = {"msg": "hello"}
-    env = make_envelope("MSG_DIRECT", sender_id, receiver_id, payload)
+    env = make_signed_envelope("MSG_DIRECT", sender_id, receiver_id, payload)
     print(to_json(env))
+    print(fake_verify(payload, env["sig"]))
