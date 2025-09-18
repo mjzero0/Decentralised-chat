@@ -14,46 +14,58 @@ def now_ms():
 def to_json(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
+connected_servers = {}  # server_id -> websocket
+
 async def handle_join(websocket):
+    server_id = None
     try:
-        msg = await websocket.recv()
-        env = json.loads(msg)
+        async for msg in websocket:
+            env = json.loads(msg)
+            mtype = env["type"]
 
-        if env["type"] != "SERVER_HELLO_JOIN":
-            await websocket.send(to_json({
-                "type": "ERROR",
-                "from": "introducer",
-                "to": env.get("from", ""),
-                "ts": now_ms(),
-                "payload": {"code": "BAD_TYPE", "detail": "Expected SERVER_HELLO_JOIN"},
-                "sig": ""
-            }))
-            return
+            if mtype == "SERVER_HELLO_JOIN":
+                server_id = env["from"]
+                connected_servers[server_id] = websocket
 
-        server_id = env["from"]
-        print(f"✅ Received SERVER_HELLO_JOIN from {server_id}")
+                # 发送 WELCOME
+                welcome = {
+                    "type": "SERVER_WELCOME",
+                    "from": "introducer-0000-0000",
+                    "to": server_id,
+                    "ts": now_ms(),
+                    "payload": {
+                        "assigned_id": server_id,
+                        "clients": [
+                            {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
+                            {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
+                        ]
+                    },
+                    "sig": ""
+                }
+                await websocket.send(to_json(welcome))
+                print(f"📤 Sent SERVER_WELCOME to {server_id}")
 
-        # Build dummy SERVER_WELCOME
-        welcome = {
-            "type": "SERVER_WELCOME",
-            "from": "introducer-0000-0000",
-            "to": server_id,
-            "ts": now_ms(),
-            "payload": {
-                "assigned_id": server_id,  # reuse the same for simplicity
-                "clients": [
-                    {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
-                    {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
-                ]
-            },
-            "sig": ""  # introducer can omit sig per your test setup
-        }
+            elif mtype == "SERVER_ANNOUNCE":
+                print(f"📡 Received SERVER_ANNOUNCE from {env['from']}")
 
-        await websocket.send(to_json(welcome))
-        print(f"📤 Sent SERVER_WELCOME to {server_id}")
+                for other_id, other_ws in connected_servers.items():
+                    if other_id != env["from"]:
+                        try:
+                            await other_ws.send(to_json(env))
+                            print(f"📣 Relayed SERVER_ANNOUNCE to {other_id}")
+                        except Exception as e:
+                            print(f"❌ Failed to relay to {other_id}: {e}")
+
+            else:
+                print(f"ℹ️ Unhandled message type: {mtype}")
 
     except Exception as e:
-        print("❌ Error:", e)
+        print("❌ Error in handler:", e)
+    finally:
+        if server_id and connected_servers.get(server_id) == websocket:
+            print(f"⚠️ Connection closed for {server_id}")
+            del connected_servers[server_id]
+
 
 async def start_server():
     print("🌐 Fake Introducer running on ws://localhost:8765")
