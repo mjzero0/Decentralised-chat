@@ -25,6 +25,11 @@ async def handle_join(websocket):
 
             if mtype == "SERVER_HELLO_JOIN":
                 server_id = env["from"]
+                
+                # server_id is checked within network to verify its uniqueness. If it is, return same ID, 
+                # otherwise return new unique ID
+                while server_id in connected_servers.keys():
+                    server_id = str(uuid.uuid4())
                 connected_servers[server_id] = websocket
 
                 # 发送 WELCOME
@@ -35,6 +40,7 @@ async def handle_join(websocket):
                     "ts": now_ms(),
                     "payload": {
                         "assigned_id": server_id,
+                        # TODO: HOW TO UPDATE THIS???
                         "clients": [
                             {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
                             {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}

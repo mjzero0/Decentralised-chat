@@ -104,7 +104,7 @@ def rsassa_pss_verify(pubkey, data: bytes, signature: bytes) -> bool:
         return False
 
 # secure envelope generator
-def make_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, Any], sig: str = "") -> Dict[str, Any]:
+def make_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     # validations
     if not isinstance(msg_type, str) or not msg_type:
         raise ValueError("Type must be a non-empty string")
@@ -118,9 +118,9 @@ def make_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, 
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object (dict)")
 
-    # sig must be base64url (if provided)
-    if sig and not all(c.isalnum() or c in "-_" for c in sig):
-        raise ValueError("sig must be base64url-encoded")
+    # # sig must be base64url (if provided)
+    # if sig and not all(c.isalnum() or c in "-_" for c in sig):
+    #     raise ValueError("sig must be base64url-encoded")
 
     # --- envelope construction ---
     envelope = {
@@ -129,7 +129,7 @@ def make_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, 
         "to": receiver,                    # UUID or "*"
         "ts": int(time.time() * 1000),     # Unix timestamp in ms
         "payload": payload,                # JSON object
-        "sig": sig                         # base64url signature (empty for now)
+        # "sig": sig                         # base64url signature (empty for now)
     }
     return envelope
 
@@ -194,13 +194,13 @@ def frame_fingerprint(env: Dict[str, Any]) -> str:
     h = hashlib.sha256(canonical_payload(env["payload"])).digest()
     return f'{env["ts"]}|{env["from"]}|{env["to"]}|{b64u_encode(h)}'
 
-# check if it's duplicate, if is, then drop
-def drop_if_seen(env: Dict[str, Any]) -> bool:
-    fp = frame_fingerprint(env)
-    if fp in seen_ids:
-        return True
-    seen_ids.add(fp)
-    return False
+# # check if it's duplicate, if is, then drop
+# def drop_if_seen(env: Dict[str, Any]) -> bool:
+#     fp = frame_fingerprint(env)
+#     if fp in seen_ids:
+#         return True
+#     seen_ids.add(fp)
+#     return False
 
 # === Example usage: DM build path (client-side style) ========================
 if __name__ == "__main__":
