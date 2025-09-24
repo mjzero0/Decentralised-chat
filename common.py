@@ -11,15 +11,6 @@ from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.backends import default_backend
 from cryptography.exceptions import InvalidSignature
 
-# ---------- In-memory tables ----------
-servers = {}         # server_id -> link (all other servers)
-server_addrs = {}    # server_id -> (host, port) (all other servers)
-local_users = {}     # user_id -> link (users belong to this server)
-user_locations = {}  # user_id -> "local" | server_id (all users)
-# Each Server MUST keep a short-term seen_ids cache for server-delivered frames (by (ts,from,to,hash(payload))) 
-# and drop duplicates.
-seen_ids = set()     # {(ts, from, to, sha256(payload))}
-
 # === Your server's key material (example placeholders) =======================
 # In real code, load from your persistent keystore / DB.
 SERVER_PRIVATE_KEY_PEM = None  # set to your PEM bytes
