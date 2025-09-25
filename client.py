@@ -16,8 +16,8 @@ from common import (
 )
 from cryptography.hazmat.primitives import serialization
 
-SERVER_HOST = "10.13.104.41"
-SERVER_PORT = 9001
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 9002
 
 KEY_FILE = "user_priv.pem"
 USER_ID_FILE = "user_id.txt"
