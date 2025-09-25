@@ -29,7 +29,7 @@ MY_PORT = int(os.getenv("MY_PORT", "9001"))
 # ---------- In-memory tables ----------
 servers = {}           # server_id -> websocket (server↔server links)
 server_addrs = {}      # server_id -> (host, port)
-server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVE    R_ANNOUNCE)
+server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVER_ANNOUNCE)
 local_users = {}       # user_id -> websocket (clients connected to THIS server)
 user_locations = {}    # user_id -> "local" | server_id
 seen_ids = set()       # {(ts, from, to, sha256(payload))}
@@ -90,7 +90,6 @@ def make_server_announce(from_id: str, host: str, port: int, pubkey_b64u: str) -
 # -------------------------
 
 def handle_server_welcome(envelope: dict):
-    global server_id
     payload = envelope["payload"]
     server_id = payload["assigned_id"]
     print(f"✅ Assigned server_id: {server_id}")
@@ -103,20 +102,63 @@ def handle_server_welcome(envelope: dict):
         user_id = client["user_id"]
         user_locations[user_id] = (client["host"], client["port"])
         print(f"📥 Learned user {user_id} is on {(client['host'], client['port'])}")
+        
+    # for other_server in payload.get("servers", []):
+    #     other_server_id = other_server["server_id"]
+    #     server_addrs[other_server_id] = (other_server["host"], other_server["port"])
+    #     server_pubkeys[other_server_id] = other_server["pubkey"]
+        
 
 # -------------------------
 # SERVER↔SERVER LINKS
 # -------------------------
-
+        
 async def connect_to_other_server(host, port, _server_id):
     uri = f"ws://{host}:{port}"
-
     try:
         ws = await websockets.connect(uri)
-        servers[_server_id] = ws
-        print(f"🔗 Connected to server {_server_id} at {host}:{port}")
+        servers[_server_id] = ws # connect to the new server
+        print(f"🔗 Connected to server {_server_id} at {uri}")
+        # # ✅ Step 1: 同步我知道的所有 server 地址
+        # for sid, (h, p) in server_addrs.items():
+        #     if sid == _server_id:  # ⚠️ 跳过目标 server 本身
+        #         continue
+        #     pubkey = server_pubkeys.get(sid, "")
+        #     server_info = {
+        #         "type": "SERVER_ANNOUNCE",
+        #         "from": your_server_id,
+        #         "to": _server_id,
+        #         "ts": now_ms(),
+        #         "payload": {
+        #             "host": h,
+        #             "port": p,
+        #             "pubkey": pubkey
+        #         },
+        #         "sig": ""  # TODO: 加签名
+        #     }
+        #     await ws.send(to_json(server_info))
+        #     print(f"📨 Sent SERVER_ANNOUNCE (about {sid}) to {_server_id}")
+
+        # # ✅ Step 2: 主动发送本地所有用户的 USER_ADVERTISE
+        # for user_id, user_ws in local_users.items():
+        #     advert = {
+        #         "type": "USER_ADVERTISE",
+        #         "from": your_server_id,
+        #         "to": "*",
+        #         "ts": now_ms(),
+        #         "payload": {
+        #             "user_id": user_id,
+        #             "server_id": your_server_id,
+        #             "meta": {}  # 可选 meta
+        #         },
+        #         "sig": ""  # 可以签名
+        #     }
+        #     await ws.send(to_json(advert))
+        #     print(f"📨 Sent USER_ADVERTISE for {user_id} to {_server_id}")
+
     except Exception as e:
         print(f"❌ Failed to connect to {_server_id}: {e}")
+
 
 async def handle_server_announce(envelope: dict):
     # (Optional) verify this ANNOUNCE if we already have sender's pubkey.
