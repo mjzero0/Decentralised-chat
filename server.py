@@ -18,18 +18,18 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "127.0.0.1"
+INTRODUCER_HOST = "10.13.104.41"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
 # Bind to all interfaces by default so teammates can connect over LAN.
-MY_HOST = os.getenv("MY_HOST", "0.0.0.0")
+MY_HOST = os.getenv("MY_HOST", "10.13.104.41")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # ---------- In-memory tables ----------
 servers = {}           # server_id -> websocket (server↔server links)
 server_addrs = {}      # server_id -> (host, port)
-server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVER_ANNOUNCE)
+server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVE    R_ANNOUNCE)
 local_users = {}       # user_id -> websocket (clients connected to THIS server)
 user_locations = {}    # user_id -> "local" | server_id
 seen_ids = set()       # {(ts, from, to, sha256(payload))}
@@ -110,6 +110,7 @@ def handle_server_welcome(envelope: dict):
 
 async def connect_to_other_server(host, port, _server_id):
     uri = f"ws://{host}:{port}"
+
     try:
         ws = await websockets.connect(uri)
         servers[_server_id] = ws
