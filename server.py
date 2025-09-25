@@ -33,6 +33,9 @@ server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVE    R_ANNOUN
 local_users = {}       # user_id -> websocket (clients connected to THIS server)
 user_locations = {}    # user_id -> "local" | server_id
 seen_ids = set()       # {(ts, from, to, sha256(payload))}
+user_pubkeys = {}  # user_id -> base64url(pubkey) from USER_HELLO
+
+user_pubkeys = {}
 
 # Assigned after SERVER_WELCOME
 server_id = None
@@ -214,13 +217,19 @@ async def handle_user_remove(envelope):
 # USER FLOW
 # -------------------------
 
-async def handle_user_hello(user_id, link):
+async def handle_user_hello(user_id, link, payload):
+
+    
     # Simple duplicate guard
     if user_id in local_users or user_id in user_locations:
         error_msg = {"type": "ERROR", "code": "NAME_IN_USE", "reason": f"user_id '{user_id}' already exists"}
         await link.send(json.dumps(error_msg))
         print(f"❌ Duplicate user_id: {user_id}, rejected.")
         return
+    
+    pubkey = payload.get("pubkey")
+    if pubkey:
+        user_pubkeys[user_id] = pubkey
 
     local_users[user_id] = link
     user_locations[user_id] = "local"
@@ -304,13 +313,40 @@ async def handle_connection(websocket):
 
             if mtype == "USER_HELLO":
                 user_id = envelope["from"]
-                await handle_user_hello(user_id, websocket)
+                payload = envelope.get("payload", {})
+                await handle_user_hello(user_id, websocket, payload)
 
             elif mtype == "USER_ADVERTISE":
                 await handle_user_advertise(envelope)
 
             elif mtype == "MSG_DIRECT":
                 await handle_msg_direct(envelope)
+
+            elif mtype == "GET_PUBKEY":
+                requester = envelope["from"]
+                target_id = envelope["payload"]["user_id"]
+                key = user_pubkeys.get(target_id)
+
+                if key:
+                    response = make_signed_envelope(
+                        "PUBKEY",
+                        server_id,
+                        requester,
+                        {"user_id": target_id, "pubkey": key},
+                        server_priv,
+                    )
+                    await websocket.send(json.dumps(response))
+                    print(f"🔑 Sent pubkey of {target_id} to {requester}")
+                else:
+                    error = make_signed_envelope(
+                        "ERROR",
+                        server_id,
+                        requester,
+                        {"code": "USER_NOT_FOUND", "detail": f"No pubkey for {target_id}"},
+                        server_priv,
+                    )
+                    await websocket.send(json.dumps(error))
+                    print(f"❌ No pubkey found for {target_id} (asked by {requester})")
 
             elif mtype == "USER_REMOVE":
                 await handle_user_remove(envelope)
@@ -337,9 +373,7 @@ async def handle_connection(websocket):
             await broadcast_user_remove(disconnected_user, server_id)
             print(f"👋 User {disconnected_user} disconnected and removed.")
 
-# -------------------------
-# BOOTSTRAP
-# -------------------------
+
 
 async def join_network():
     try:
