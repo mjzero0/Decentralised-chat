@@ -32,7 +32,6 @@ server_addrs = {}      # server_id -> (host, port)
 server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVER_ANNOUNCE)
 local_users = {}       # user_id -> websocket (clients connected to THIS server)
 user_locations = {}    # user_id -> "local" | server_id
-user_pubkeys = {}      # user_id -> pubkey_b64u
 seen_ids = set()       # {(ts, from, to, sha256(payload))}
 
 # Assigned after SERVER_WELCOME
