@@ -104,6 +104,7 @@ async def handle_client(websocket):
                     "sig": ""
                 }
                 await broadcast(rm)
+                
 
 async def main():
     async with websockets.serve(handle_client, "0.0.0.0", 9001):
