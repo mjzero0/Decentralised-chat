@@ -2,176 +2,179 @@ import asyncio
 import websockets
 import json
 import time
-import hashlib
 import os
-import base64
-import tempfile
+import hmac
+import hashlib
+import uuid
 
-# ----------------------------
-# Password hashing (PBKDF2)
-# ----------------------------
-def hash_password(password: str) -> str:
-    salt = os.urandom(16)  # 16-byte salt
-    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-    return base64.b64encode(salt + key).decode("utf-8")  # store base64(salt||key)
+# =========================
+# Simple persistent "DB"
+#   users_db.json structure:
+#   {
+#     "users": {
+#        "<username>": {
+#           "user_id": "<uuidv4>",
+#           "salt": "<hex>",
+#           "pwd_hash": "<hex>",     # SHA256(salt || password)
+#           "pubkey": "<b64url>"
+#        }
+#     }
+#   }
+# =========================
 
-def verify_password(stored_hash: str, password: str) -> bool:
-    try:
-        data = base64.b64decode(stored_hash.encode("utf-8"))
-        salt, key = data[:16], data[16:]
-        new_key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
-        return new_key == key
-    except Exception:
-        return False
+DB_FILE = "users_db.json"
 
-# ----------------------------
-# JSON "database" (fixed path)
-# ----------------------------
-HERE = os.path.dirname(os.path.abspath(__file__))
-USERS_FILE = os.path.join(HERE, "users.json")
-
-def ensure_users_file():
-    # Create empty {} file if missing or invalid
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w") as f:
-            f.write("{}")
-        return
-    try:
-        with open(USERS_FILE, "r") as f:
-            _ = json.load(f)
-    except Exception:
-        with open(USERS_FILE, "w") as f:
-            f.write("{}")
-
-def load_users():
-    ensure_users_file()
-    with open(USERS_FILE, "r") as f:
+def load_db():
+    if not os.path.exists(DB_FILE):
+        return {"users": {}}
+    with open(DB_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def atomic_write_json(path: str, obj: dict):
-    # Write to temp and replace atomically to avoid partial/corrupt writes
-    dir_ = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(prefix="users_", suffix=".json", dir=dir_)
-    try:
-        with os.fdopen(fd, "w") as f:
-            json.dump(obj, f, indent=2)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
-        raise
+def save_db(db):
+    tmp = DB_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(db, f, indent=2)
+    os.replace(tmp, DB_FILE)
 
-def save_users(users):
-    atomic_write_json(USERS_FILE, users)
-    print(f"[AUTH] Saved users DB to: {USERS_FILE}")
-    print(f"[AUTH] Current users DB:\n{json.dumps(users, indent=2)}")
+db = load_db()
 
-# ----------------------------
-# Runtime state
-# ----------------------------
-# user_id (uuid) -> {"ws": websocket, "pubkey": str, "username": str}
-local_users = {}
+# In-memory presence & routing tables ( SOCP §5.2 )
+local_users = {}         # user_id -> {"ws": websocket, "pubkey": str, "username": str}
+user_locations = {}      # user_id -> "local"
+pending_auth = {}        # websocket -> {"username": str, "nonce": bytes}
+
+# Utility
+def now_ms():
+    return int(time.time() * 1000)
 
 async def broadcast(msg):
     dead = []
-    for uid, info in list(local_users.items()):
+    for uid, info in local_users.items():
         try:
             await info["ws"].send(json.dumps(msg))
         except Exception:
             dead.append(uid)
     for uid in dead:
-        local_users.pop(uid, None)
+        try:
+            del local_users[uid]
+        except KeyError:
+            pass
 
-async def send_and_close(websocket, code=1000, reason=""):
-    try:
-        await websocket.close(code=code, reason=reason)
-    except Exception:
+# ================
+# AUTHN FLOW
+# ================
+# Client messages:
+#  - USER_REGISTER:   {username, password_hash?, pubkey} -> here we accept: username, salt, pwd_hash, pubkey
+#  - AUTH_HELLO:      {username, user_id?} -> server replies AUTH_CHALLENGE {nonce}
+#  - AUTH_RESPONSE:   {username, proof_hmac_hex, pubkey?}
+# Server verifies proof = HMAC_SHA256(key=pwd_hash_hex_bytes, msg=nonce).
+# On success -> mark websocket as this user, advertise presence, send existing users.
+
+async def handle_user_register(websocket, env):
+    payload = env.get("payload", {})
+    username = str(payload.get("username", "")).strip()
+    salt_hex = str(payload.get("salt", "")).strip()
+    pwd_hash_hex = str(payload.get("pwd_hash", "")).strip()
+    pubkey = payload.get("pubkey")
+
+    if not username or not salt_hex or not pwd_hash_hex or not pubkey:
+        await send_error(websocket, "UNKNOWN_TYPE", "Missing fields for USER_REGISTER")
+        return
+
+    users = db.setdefault("users", {})
+    if username in users:
+        await send_error(websocket, "NAME_IN_USE", f"Username '{username}' already exists")
+        return
+
+    # Assign a user_id (UUIDv4) and store
+    user_id = str(uuid.uuid4())
+    users[username] = {
+        "user_id": user_id,
+        "salt": salt_hex,
+        "pwd_hash": pwd_hash_hex,
+        "pubkey": pubkey
+    }
+    save_db(db)
+
+    resp = {
+        "type": "REGISTER_OK",
+        "from": "server",
+        "to": env.get("from", "client"),
+        "ts": now_ms(),
+        "payload": {"user_id": user_id},
+        "sig": ""
+    }
+    await websocket.send(json.dumps(resp))
+    print(f"🆕 Registered user '{username}' ({user_id[:8]}…)")
+
+async def handle_auth_hello(websocket, env):
+    payload = env.get("payload", {})
+    username = str(payload.get("username", "")).strip()
+    if not username or username not in db.get("users", {}):
+        await send_error(websocket, "USER_NOT_FOUND", "Unknown username")
+        return
+
+    nonce = os.urandom(32)
+    pending_auth[websocket] = {"username": username, "nonce": nonce}
+
+    resp = {
+        "type": "AUTH_CHALLENGE",
+        "from": "server",
+        "to": env.get("from", "client"),
+        "ts": now_ms(),
+        "payload": {"nonce_b64": base64url_encode(nonce)},
+        "sig": ""
+    }
+    await websocket.send(json.dumps(resp))
+    print(f"🔒 AUTH_CHALLENGE sent to '{username}'")
+
+async def handle_auth_response(websocket, env):
+    payload = env.get("payload", {})
+    if websocket not in pending_auth:
+        await send_error(websocket, "INVALID_SIG", "No pending challenge")
+        return
+
+    username = pending_auth[websocket]["username"]
+    nonce = pending_auth[websocket]["nonce"]
+    proof_hex = str(payload.get("proof_hmac_hex", "")).strip()
+    pubkey = payload.get("pubkey")
+    user_id_claim = env.get("from")
+
+    user_record = db["users"].get(username)
+    if not user_record:
+        await send_error(websocket, "USER_NOT_FOUND", "Unknown username")
+        return
+
+    stored_pwd_hash_hex = user_record["pwd_hash"]  # hex string
+    key = bytes.fromhex(stored_pwd_hash_hex)
+
+    expected = hmac.new(key, nonce, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(proof_hex, expected):
+        await send_error(websocket, "BAD_PASSWORD", "Invalid credentials")
+        return
+
+    # Success: bind websocket to this user_id (prefer server-side canonical ID)
+    user_id = user_record["user_id"]
+    # Accept client 'from' mismatch only if empty/unknown; otherwise enforce match
+    if user_id_claim and user_id_claim != user_id:
+        # soft warning; we can ignore and proceed with canonical user_id
         pass
 
-# ----------------------------
-# Handlers
-# ----------------------------
-async def handle_user_hello(websocket, env):
-    payload  = env.get("payload", {}) or {}
-    username = payload.get("username")
-    password = payload.get("password")
-    pubkey   = payload.get("pubkey")
-    mode     = payload.get("mode", "login")  # "signup" or "login"
-    user_id  = env.get("from")
+    # Store presence
+    local_users[user_id] = {"ws": websocket, "pubkey": pubkey or user_record["pubkey"], "username": username}
+    user_locations[user_id] = "local"
 
-    print(f"[AUTH] USERS_FILE path: {USERS_FILE}")
+    # Keep server-stored pubkey authoritative unless client supplied a new one (you may choose to update DB)
+    if pubkey and pubkey != user_record["pubkey"]:
+        user_record["pubkey"] = pubkey
+        save_db(db)
 
-    # Basic validation
-    if not isinstance(username, str) or not username.strip():
-        print("[AUTH] Missing or empty username")
-        await send_and_close(websocket, reason="missing username")
-        return
-    if not isinstance(password, str):
-        print("[AUTH] Missing password field")
-        await send_and_close(websocket, reason="missing password")
-        return
-    if not isinstance(user_id, str) or not user_id.strip():
-        print("[AUTH] Missing/invalid user_id in envelope")
-        await send_and_close(websocket, reason="missing user_id")
-        return
-
-    users = load_users()
-    print(f"[AUTH] User exists? {username in users} (mode={mode})")
-
-    if username in users:
-        # ---- LOGIN flow (strict) ----
-        if mode != "login":
-            print(f"❌ Signup refused: '{username}' already exists")
-            await send_and_close(websocket, reason="username already exists")
-            return
-
-        stored_hash = users[username].get("password_hash", "")
-        if not stored_hash or not verify_password(stored_hash, password):
-            print(f"❌ Login failed for {username} (bad password)")
-            await send_and_close(websocket, reason="bad password")
-            return
-
-        print(f"✅ {username} logged in")
-        # Optionally update pubkey if provided
-        if isinstance(pubkey, str) and pubkey:
-            users[username]["pubkey"] = pubkey
-            save_users(users)
-
-    else:
-        # ---- SIGNUP flow (strict) ----
-        if mode != "signup":
-            print(f"❌ Login refused: '{username}' not found")
-            await send_and_close(websocket, reason="user not found")
-            return
-
-        users[username] = {
-            "password_hash": hash_password(password),
-            "pubkey": pubkey if isinstance(pubkey, str) else ""
-        }
-        save_users(users)
-        print(f"🆕 Created new user '{username}'")
-
-    # Register live connection
-    local_users[user_id] = {"ws": websocket, "pubkey": pubkey or "", "username": username}
-    print(f"👋 New user {username} ({user_id}) connected. Online={len(local_users)}")
-
-    await websocket.send(json.dumps({
-        "type": "LOGIN_OK",
-        "from": "server",
-        "to": user_id,
-        "ts": int(time.time() * 1000),
-        "payload": {"status": "success"},
-        "sig": ""
-    }))
-
-    # Presence gossip to this user (who's already online here)
-    now = int(time.time() * 1000)
+    # Notify newcomer about existing users
+    now = now_ms()
     for uid, info in list(local_users.items()):
         if uid == user_id:
             continue
-        await websocket.send(json.dumps({
+        advertise_existing = {
             "type": "USER_ADVERTISE",
             "from": "server",
             "to": user_id,
@@ -182,83 +185,171 @@ async def handle_user_hello(websocket, env):
                 "pubkey": info.get("pubkey")
             },
             "sig": ""
-        }))
+        }
+        try:
+            await websocket.send(json.dumps(advertise_existing))
+        except Exception:
+            pass
 
-    # Broadcast newcomer to others
-    await broadcast({
+    # Broadcast presence to everyone (local broadcast to clients here)
+    advertise_new = {
         "type": "USER_ADVERTISE",
         "from": "server",
         "to": "*",
         "ts": now,
-        "payload": {"user_id": user_id, "username": username, "pubkey": pubkey},
+        "payload": {"user_id": user_id, "username": username, "pubkey": user_record["pubkey"]},
         "sig": ""
-    })
+    }
+    await broadcast(advertise_new)
 
-async def handle_msg_direct(env):
-    target = env.get("to")
+    # Tell the client they're authenticated
+    ok = {
+        "type": "AUTH_OK",
+        "from": "server",
+        "to": user_id,
+        "ts": now_ms(),
+        "payload": {"user_id": user_id},
+        "sig": ""
+    }
+    try:
+        await websocket.send(json.dumps(ok))
+    except Exception:
+        pass
+
+    # Cleanup challenge
+    pending_auth.pop(websocket, None)
+    print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
+
+# ================
+# ROUTING / DELIVERY
+# ================
+def wrap_user_deliver(env):
+    """Wrap incoming user content for final delivery."""
+    return {
+        "type": "USER_DELIVER",
+        "from": "server",
+        "to": env["to"],
+        "ts": env["ts"],
+        "payload": env["payload"],
+        "sig": ""
+    }
+
+async def route_user_frame(env):
+    target = env["to"]
+    mtype = env.get("type", "")
+
     if target in local_users:
-        deliver_payload = dict(env.get("payload", {}))
-        # Ensure sender is present in payload
-        if "sender" not in deliver_payload:
-            deliver_payload["sender"] = env.get("from")
+        if mtype == "MSG_DIRECT":
+            # DMs get wrapped as USER_DELIVER (transport envelope)
+            deliver = {
+                "type": "USER_DELIVER",
+                "from": "server",
+                "to": target,
+                "ts": env["ts"],
+                "payload": env["payload"],
+                "sig": ""
+            }
+        else:
+            # FILE_START / FILE_CHUNK / FILE_END should be forwarded unchanged
+            # so the receiver sees their actual types and handles them.
+            deliver = env
 
-        deliver = {
-            "type": "USER_DELIVER",
-            "from": "server",
-            "to": target,
-            "ts": env.get("ts"),
-            "payload": deliver_payload,   # ✅ use the fixed payload
-            "sig": ""
-        }
         try:
             await local_users[target]["ws"].send(json.dumps(deliver))
-            print(f"✅ USER_DELIVER sent to {target}")
         except Exception as e:
-            print(f"❌ Failed to deliver to {target}: {e}")
+            print(f"❌ Delivery failed to {target}: {e}")
     else:
-        print(f"⚠️ MSG_DIRECT target {target} not connected locally")
+        print(f"⚠️ USER_NOT_FOUND for {target}")
+        # Optional: notify sender
+        err = {
+            "type": "ERROR",
+            "from": "server",
+            "to": env["from"],
+            "ts": now_ms(),
+            "payload": {"code": "USER_NOT_FOUND", "detail": f"{target} not registered"},
+            "sig": ""
+        }
+        sender = env["from"]
+        if sender in local_users:
+            try:
+                await local_users[sender]["ws"].send(json.dumps(err))
+            except Exception:
+                pass
 
+async def send_error(websocket, code, detail):
+    msg = {
+        "type": "ERROR",
+        "from": "server",
+        "to": "*",
+        "ts": now_ms(),
+        "payload": {"code": code, "detail": detail},
+        "sig": ""
+    }
+    try:
+        await websocket.send(json.dumps(msg))
+    except Exception:
+        pass
+
+# Base64url helpers (no padding)
+def base64url_encode(b: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
 async def handle_client(websocket):
     try:
         async for raw in websocket:
-            try:
-                env = json.loads(raw)
-            except Exception:
-                print("⚠️ Dropping non-JSON frame")
-                continue
-            mtype = env.get("type")
-            if mtype == "USER_HELLO":
-                await handle_user_hello(websocket, env)
-            elif mtype == "MSG_DIRECT":
-                await handle_msg_direct(env)
+            env = json.loads(raw)
+            mtype = env.get("type", "")
+            # AUTH / REGISTER
+            if mtype == "USER_REGISTER":
+                await handle_user_register(websocket, env)
+            elif mtype == "AUTH_HELLO":
+                await handle_auth_hello(websocket, env)
+            elif mtype == "AUTH_RESPONSE":
+                await handle_auth_response(websocket, env)
+
+            # User content (DM + Files)
+            elif mtype in ("MSG_DIRECT", "FILE_START", "FILE_CHUNK", "FILE_END"):
+                await route_user_frame(env)
+
+            # Legacy (compat): some clients might still send USER_HELLO; reject and guide.
+            elif mtype == "USER_HELLO":
+                await send_error(websocket, "UNKNOWN_TYPE",
+                                 "Use AUTH_HELLO / AUTH_RESPONSE instead of USER_HELLO in this build.")
             else:
                 print(f"ℹ️ Unhandled msg type {mtype}")
+
     except Exception as e:
         print(f"❌ Client handler error: {e}")
     finally:
-        # Clean up disconnected user and broadcast removal
+        # Remove presence for any user bound to this websocket
+        drop_uid = None
         for uid, info in list(local_users.items()):
-            if info["ws"] is websocket:
-                local_users.pop(uid, None)
-                print(f"👋 User {uid} disconnected.")
-                await broadcast({
-                    "type": "USER_REMOVE",
-                    "from": "server",
-                    "to": "*",
-                    "ts": int(time.time() * 1000),
-                    "payload": {"user_id": uid},
-                    "sig": ""
-                })
+            if info["ws"] == websocket:
+                drop_uid = uid
+                break
+        if drop_uid:
+            try:
+                del local_users[drop_uid]
+                user_locations.pop(drop_uid, None)
+            except KeyError:
+                pass
+            print(f"👋 User {drop_uid[:8]}… disconnected.")
+            rm = {
+                "type": "USER_REMOVE",
+                "from": "server",
+                "to": "*",
+                "ts": now_ms(),
+                "payload": {"user_id": drop_uid},
+                "sig": ""
+            }
+            await broadcast(rm)
 
-# ----------------------------
-# Main
-# ----------------------------
+        pending_auth.pop(websocket, None)
+
 async def main():
-    ensure_users_file()
     async with websockets.serve(handle_client, "0.0.0.0", 9001):
-        print(f"🌐 Server running on ws://0.0.0.0:9001")
-        print(f"🗄️  Users DB: {USERS_FILE}")
+        print("🌐 Server running on ws://0.0.0.0:9001")
         await asyncio.Future()
 
 if __name__ == "__main__":
