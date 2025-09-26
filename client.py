@@ -19,7 +19,7 @@ from common import (
 )
 from cryptography.hazmat.primitives import serialization
 
-SERVER_HOST = "127.0.0.1"  # adjust to your server IP
+SERVER_HOST = "10.13.104.41"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"
@@ -182,6 +182,16 @@ async def login():
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
                             print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
+
+                    elif mtype == "USER_REMOVE": #this is for other clients to get a message when a client is disconnected
+                        uid = env["payload"]["user_id"]
+                        uname = uuid_lookup.pop(uid, None)   # remove from reverse map
+                        if uname:
+                            known_users.pop(uname, None)
+                            print(f"👋 {uname} disconnected")
+                        else:
+                            print(f"👋 User {uid[:8]}… disconnected")
+
 
                     else:
                         print(f"📩 {env}")
