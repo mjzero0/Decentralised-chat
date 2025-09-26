@@ -5,6 +5,8 @@ import base64
 from typing import Any, Dict
 import hashlib
 
+import os, hashlib, base64
+
 # NEW: cryptography primitives for RSA-4096, OAEP(SHA-256), RSASSA-PSS(SHA-256)
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
@@ -251,3 +253,19 @@ if __name__ == "__main__":
     print("content_sig valid?", ok)
     decrypted = rsa_oaep_decrypt(recipient_priv, b64u_decode(env["payload"]["ciphertext"]))
     print("plaintext:", decrypted.decode("utf-8"))
+
+
+
+  
+# password hashing
+def hash_password(password: str, salt: bytes = None) -> str:
+    if not salt:
+        salt = os.urandom(16)  # 16-byte random salt
+    key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+    return base64.b64encode(salt + key).decode()
+
+def verify_password(stored: str, password: str) -> bool:
+    raw = base64.b64decode(stored.encode())
+    salt, key = raw[:16], raw[16:]
+    new_key = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100_000)
+    return new_key == key

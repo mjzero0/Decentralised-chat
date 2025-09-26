@@ -28,12 +28,15 @@ USER_ID_FILE = "user_id.txt"
 
 # --- Signup: first time user ---
 USERNAME_FILE = "user_name.txt"
+
 def signup():
+
+    username = input("Choose a username: ").strip()
+    password = input("Choose a password: ").strip()
+
     user_id = str(uuid.uuid4())
     priv = generate_rsa4096()
     pub_b64u = public_key_b64u_from_private(priv)
-
-    username = input("Choose a username: ").strip()
 
     # Save private key
     with open(KEY_FILE, "wb") as f:
@@ -58,6 +61,9 @@ async def login():
     if not os.path.exists(KEY_FILE) or not os.path.exists(USER_ID_FILE):
         print("❌ No user found, run signup first")
         return
+    
+    username = open(USERNAME_FILE).read().strip()
+    password = input("Enter password: ").strip()
 
     user_id = open(USER_ID_FILE).read().strip()
     username = open(USERNAME_FILE).read().strip()
@@ -74,7 +80,7 @@ async def login():
         print(f"🔌 Connected to server at {uri}")
 
         # Send USER_HELLO
-        hello_payload = {"client": "cli-v1", "username": username, "pubkey": pub_b64u, "enc_pubkey": pub_b64u}
+        hello_payload = {"client": "cli-v1", "username": username, "password": password, "pubkey": pub_b64u, "enc_pubkey": pub_b64u}
         hello = {
             "type": "USER_HELLO",
             "from": user_id,
