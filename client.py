@@ -19,36 +19,38 @@ from common import (
 )
 from cryptography.hazmat.primitives import serialization
 
-SERVER_HOST = "10.13.104.41"  # adjust to your server IP
+SERVER_HOST = "10.13.104.41"
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"
 USER_ID_FILE = "user_id.txt"
-
-
-# --- Signup: first time user ---
 USERNAME_FILE = "user_name.txt"
 
-def signup():
 
+def signup():
     username = input("Choose a username: ").strip()
     password = input("Choose a password: ").strip()
 
-    user_id = str(uuid.uuid4())
-    priv = generate_rsa4096()
-    pub_b64u = public_key_b64u_from_private(priv)
+    if os.path.exists(USER_ID_FILE):
+        user_id = open(USER_ID_FILE).read().strip()
+    else:
+        user_id = str(uuid.uuid4())
+        with open(USER_ID_FILE, "w") as f:
+            f.write(user_id)
 
-    # Save private key
-    with open(KEY_FILE, "wb") as f:
-        f.write(
-            priv.private_bytes(
+    if not os.path.exists(KEY_FILE):
+        priv = generate_rsa4096()
+        with open(KEY_FILE, "wb") as f:
+            f.write(priv.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.PKCS8,
                 encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-    with open(USER_ID_FILE, "w") as f:
-        f.write(user_id)
+            ))
+    else:
+        with open(KEY_FILE, "rb") as f:
+            priv = load_private_key_pem(f.read())
+
+    pub_b64u = public_key_b64u_from_private(priv)
     with open(USERNAME_FILE, "w") as f:
         f.write(username)
 
@@ -56,31 +58,34 @@ def signup():
     print(f"📂 Keys saved in {KEY_FILE}")
 
 
-# --- Login + connect ---
-async def login():
+async def login_or_signup(mode="login"):
     if not os.path.exists(KEY_FILE) or not os.path.exists(USER_ID_FILE):
         print("❌ No user found, run signup first")
         return
-    
+
     username = open(USERNAME_FILE).read().strip()
     password = input("Enter password: ").strip()
-
     user_id = open(USER_ID_FILE).read().strip()
-    username = open(USERNAME_FILE).read().strip()
 
     with open(KEY_FILE, "rb") as f:
         priv = load_private_key_pem(f.read())
     pub_b64u = public_key_b64u_from_private(priv)
 
-    known_users = {}  # user_id -> pubkey (base64url)
-    uuid_lookup = {}  # uuid -> username
+    known_users = {}
+    uuid_lookup = {}
 
     uri = f"ws://{SERVER_HOST}:{SERVER_PORT}"
     async with websockets.connect(uri) as ws:
         print(f"🔌 Connected to server at {uri}")
 
-        # Send USER_HELLO
-        hello_payload = {"client": "cli-v1", "username": username, "password": password, "pubkey": pub_b64u, "enc_pubkey": pub_b64u}
+        hello_payload = {
+            "mode": mode,  # "signup" or "login"
+            "client": "cli-v1",
+            "username": username,
+            "password": password,
+            "pubkey": pub_b64u,
+            "enc_pubkey": pub_b64u
+        }
         hello = {
             "type": "USER_HELLO",
             "from": user_id,
@@ -90,42 +95,47 @@ async def login():
             "sig": ""
         }
         await ws.send(json.dumps(hello))
-        print(f"📤 Sent USER_HELLO as {user_id}")
+        print(f"📤 Sent USER_HELLO as {user_id} ({mode})")
+
+        try:
+            test_recv = await asyncio.wait_for(ws.recv(), timeout=2)
+            env = json.loads(test_recv)
+            if env.get("type") == "LOGIN_OK":
+                print("✅ Login/signup confirmed")
+            else:
+                print("❌ Unexpected response after login:", env)
+                return
+        except asyncio.TimeoutError:
+            print("❌ No response from server. Possibly rejected.")
+            return
+        except websockets.exceptions.ConnectionClosed:
+            print("❌ Server rejected login/signup or closed the connection.")
+            return
 
         # --- sender loop ---
         async def sender_loop():
             while True:
-                try:
-                    cmd = await asyncio.to_thread(input, "> ")
-                except EOFError:
-                    await asyncio.sleep(0.25)
-                    continue
-
+                cmd = await asyncio.to_thread(input, "> ")
                 cmd = cmd.strip()
                 if cmd.startswith("/tell "):
                     try:
-                        _,target_name, *msg_parts = cmd.split(" ")
+                        _, target_name, *msg_parts = cmd.split(" ")
                         message = " ".join(msg_parts).encode("utf-8")
-                        
                         if target_name not in known_users:
                             print(f"⚠️ Don’t know user {target_name}")
                             continue
                         target_id = known_users[target_name]["uuid"]
                         recip_pub_b64u = known_users[target_name]["pubkey"]
-                        if not recip_pub_b64u:
-                            print(f"⚠️ Don’t know pubkey for {target_id}")
-                            continue
                         recip_pub = load_public_key_b64u(recip_pub_b64u)
-
                         ciphertext = rsa_oaep_encrypt(recip_pub, message)
                         ciphertext_b64u = base64.urlsafe_b64encode(ciphertext).decode().rstrip("=")
-
                         ts = int(time.time() * 1000)
-                        content_sig = make_dm_content_sig(priv, ciphertext_b64u, user_id, target_id, ts)
-
+                        content_sig = make_dm_content_sig(
+                            priv, ciphertext_b64u, user_id, target_id, ts
+                        )
                         payload = {
                             "ciphertext": ciphertext_b64u,
-                            "sender": user_id, 
+                            "sender": user_id,
                             "sender_pub": pub_b64u,
                             "content_sig": content_sig
                         }
@@ -143,9 +153,8 @@ async def login():
                         print(f"❌ Failed to send DM: {e}")
                 elif cmd == "/list":
                     print("Known users:", ", ".join(known_users.keys()) or "(none)")
-
                 else:
-                    print("Commands: /tell <user_name> <msg> | /list")
+                    print("Commands: /tell <user> <msg> | /list")
 
         # --- receiver loop ---
         async def receiver_loop():
@@ -154,33 +163,7 @@ async def login():
                     raw = await ws.recv()
                     env = json.loads(raw)
                     mtype = env.get("type")
-
-                    if mtype == "USER_DELIVER":
-                        payload = env["payload"]
-                        try:
-                            ciphertext = b64u_decode(payload["ciphertext"])
-                            plaintext = rsa_oaep_decrypt(priv, ciphertext).decode("utf-8")
-
-                            ok = verify_dm_content_sig(
-                                sender_pub_b64u=payload["sender_pub"],
-                                ciphertext_b64u=payload["ciphertext"],
-                                sender_id=payload.get("sender", "?"),
-                                recipient_id=env["to"],
-                                ts=env["ts"],
-                                content_sig_b64u=payload["content_sig"]
-                            )
-
-                            if ok:
-                                sender_uuid = payload.get("sender")
-                                sender_name = uuid_lookup.get(sender_uuid, sender_uuid[:8])  # fallback: uuid prefix
-                                print(f"\n💬 DM from {sender_name}: {plaintext}")
-                            else:
-                                print(f"\n⚠️ DM received but signature invalid: {plaintext}")
-
-                        except Exception as e:
-                            print(f"\n❌ Failed to decrypt DM: {e}")
-
-                    elif mtype == "USER_ADVERTISE":
+                    if mtype == "USER_ADVERTISE":
                         uid = env["payload"]["user_id"]
                         uname = env["payload"].get("username")
                         pubkey = env["payload"].get("pubkey")
@@ -188,32 +171,28 @@ async def login():
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
                             print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
-
-                    elif mtype == "USER_REMOVE": #this is for other clients to get a message when a client is disconnected
+                    elif mtype == "USER_REMOVE":
                         uid = env["payload"]["user_id"]
-                        uname = uuid_lookup.pop(uid, None)   # remove from reverse map
+                        uname = uuid_lookup.pop(uid, None)
                         if uname:
                             known_users.pop(uname, None)
                             print(f"👋 {uname} disconnected")
                         else:
                             print(f"👋 User {uid[:8]}… disconnected")
-
-
                     else:
                         print(f"📩 {env}")
-
             except websockets.exceptions.ConnectionClosed as e:
                 print(f"⚠️ Disconnected: {e}")
-            except Exception as e:
-                print(f"❌ Receiver error: {e}")
 
         await asyncio.gather(sender_loop(), receiver_loop())
 
 
-# --- main entry ---
 if __name__ == "__main__":
     choice = input("signup or login? ").strip().lower()
     if choice == "signup":
         signup()
+        asyncio.run(login_or_signup("signup"))  # <-- FIXED: real signup
+    elif choice == "login":
+        asyncio.run(login_or_signup("login"))
     else:
-        asyncio.run(login())
+        print("❌ Invalid choice. Please type 'signup' or 'login'")
