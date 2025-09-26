@@ -277,6 +277,8 @@ async def handle_user_advertise(envelope):
 
     # Gossip forward to other servers (except origin if we have a direct link to it)
     for sid, ws in servers.items():
+        if sid == server_id:
+            continue
         try:
             await ws.send(json.dumps(envelope))
         except Exception as e:
