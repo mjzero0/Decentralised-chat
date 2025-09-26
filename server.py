@@ -18,38 +18,43 @@ async def broadcast(msg):
 
 async def handle_user_hello(websocket, env):
     user_id = env["from"]
-    pubkey = env["payload"].get("pubkey")  # base64url DER string
+    payload = env["payload"]
+    pubkey = payload.get("pubkey")
+    username = payload.get("username")
 
-    # Save this user
-    local_users[user_id] = {"ws": websocket, "pubkey": pubkey}
-    print(f"👋 New user {user_id} connected.")
+    local_users[user_id] = {"ws": websocket, "pubkey": pubkey, "username": username}
+    print(f"👋 New user {username} ({user_id}) connected.")
 
     now = int(time.time() * 1000)
 
-    # 1) Tell the newcomer about existing users
+    # Tell newcomer about existing users
     for uid, info in list(local_users.items()):
-        if uid == user_id:
-            continue
+        if uid == user_id: continue
         advertise_existing = {
             "type": "USER_ADVERTISE",
             "from": "server",
             "to": user_id,
             "ts": now,
-            "payload": {"user_id": uid, "pubkey": info.get("pubkey")},
+            "payload": {
+                "user_id": uid,
+                "username": info.get("username"),
+                "pubkey": info.get("pubkey")
+            },
             "sig": ""
         }
         await websocket.send(json.dumps(advertise_existing))
 
-    # 2) Broadcast this new user to others
+    # Broadcast newcomer
     advertise_new = {
         "type": "USER_ADVERTISE",
         "from": "server",
         "to": "*",
         "ts": now,
-        "payload": {"user_id": user_id, "pubkey": pubkey},
+        "payload": {"user_id": user_id, "username": username, "pubkey": pubkey},
         "sig": ""
     }
     await broadcast(advertise_new)
+
 
 async def handle_msg_direct(env):
     target = env["to"]
@@ -58,7 +63,7 @@ async def handle_msg_direct(env):
             "type": "USER_DELIVER",
             "from": "server",
             "to": target,
-            "ts": int(time.time() * 1000),
+            "ts": env["ts"],
             "payload": env["payload"],
             "sig": ""
         }

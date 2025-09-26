@@ -27,11 +27,15 @@ USER_ID_FILE = "user_id.txt"
 
 
 # --- Signup: first time user ---
+USERNAME_FILE = "user_name.txt"
 def signup():
     user_id = str(uuid.uuid4())
     priv = generate_rsa4096()
     pub_b64u = public_key_b64u_from_private(priv)
 
+    username = input("Choose a username: ").strip()
+
+    # Save private key
     with open(KEY_FILE, "wb") as f:
         f.write(
             priv.private_bytes(
@@ -42,8 +46,10 @@ def signup():
         )
     with open(USER_ID_FILE, "w") as f:
         f.write(user_id)
+    with open(USERNAME_FILE, "w") as f:
+        f.write(username)
 
-    print(f"✅ Signed up as {user_id}")
+    print(f"✅ Signed up as {username} ({user_id})")
     print(f"📂 Keys saved in {KEY_FILE}")
 
 
@@ -54,18 +60,21 @@ async def login():
         return
 
     user_id = open(USER_ID_FILE).read().strip()
+    username = open(USERNAME_FILE).read().strip()
+
     with open(KEY_FILE, "rb") as f:
         priv = load_private_key_pem(f.read())
     pub_b64u = public_key_b64u_from_private(priv)
 
     known_users = {}  # user_id -> pubkey (base64url)
+    uuid_lookup = {}  # uuid -> username
 
     uri = f"ws://{SERVER_HOST}:{SERVER_PORT}"
     async with websockets.connect(uri) as ws:
         print(f"🔌 Connected to server at {uri}")
 
         # Send USER_HELLO
-        hello_payload = {"client": "cli-v1", "pubkey": pub_b64u, "enc_pubkey": pub_b64u}
+        hello_payload = {"client": "cli-v1", "username": username, "pubkey": pub_b64u, "enc_pubkey": pub_b64u}
         hello = {
             "type": "USER_HELLO",
             "from": user_id,
@@ -89,10 +98,14 @@ async def login():
                 cmd = cmd.strip()
                 if cmd.startswith("/tell "):
                     try:
-                        _, target_id, *msg_parts = cmd.split(" ")
+                        _,target_name, *msg_parts = cmd.split(" ")
                         message = " ".join(msg_parts).encode("utf-8")
-
-                        recip_pub_b64u = known_users.get(target_id)
+                        
+                        if target_name not in known_users:
+                            print(f"⚠️ Don’t know user {target_name}")
+                            continue
+                        target_id = known_users[target_name]["uuid"]
+                        recip_pub_b64u = known_users[target_name]["pubkey"]
                         if not recip_pub_b64u:
                             print(f"⚠️ Don’t know pubkey for {target_id}")
                             continue
@@ -106,6 +119,7 @@ async def login():
 
                         payload = {
                             "ciphertext": ciphertext_b64u,
+                            "sender": user_id, 
                             "sender_pub": pub_b64u,
                             "content_sig": content_sig
                         }
@@ -118,13 +132,14 @@ async def login():
                             "sig": ""
                         }
                         await ws.send(json.dumps(env))
-                        print(f"📤 Sent DM to {target_id}: {message.decode()}")
+                        print(f"📤 Sent DM to {target_name}: {message.decode()}")
                     except Exception as e:
                         print(f"❌ Failed to send DM: {e}")
                 elif cmd == "/list":
-                    print("Known users:", ", ".join(f"{u[:8]}…" for u in known_users) or "(none)")
+                    print("Known users:", ", ".join(known_users.keys()) or "(none)")
+
                 else:
-                    print("Commands: /tell <user_id> <msg> | /list")
+                    print("Commands: /tell <user_name> <msg> | /list")
 
         # --- receiver loop ---
         async def receiver_loop():
@@ -150,7 +165,9 @@ async def login():
                             )
 
                             if ok:
-                                print(f"\n💬 DM from {payload.get('sender')}: {plaintext}")
+                                sender_uuid = payload.get("sender")
+                                sender_name = uuid_lookup.get(sender_uuid, sender_uuid[:8])  # fallback: uuid prefix
+                                print(f"\n💬 DM from {sender_name}: {plaintext}")
                             else:
                                 print(f"\n⚠️ DM received but signature invalid: {plaintext}")
 
@@ -159,10 +176,12 @@ async def login():
 
                     elif mtype == "USER_ADVERTISE":
                         uid = env["payload"]["user_id"]
+                        uname = env["payload"].get("username")
                         pubkey = env["payload"].get("pubkey")
-                        if pubkey:
-                            known_users[uid] = pubkey
-                            print(f"📡 Learned pubkey for {uid}")
+                        if uname and pubkey:
+                            known_users[uname] = {"uuid": uid, "pubkey": pubkey}
+                            uuid_lookup[uid] = uname
+                            print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
 
                     else:
                         print(f"📩 {env}")
