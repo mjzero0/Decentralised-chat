@@ -153,6 +153,9 @@ async def login_or_signup(mode="login"):
                         print(f"❌ Failed to send DM: {e}")
                 elif cmd == "/list":
                     print("Known users:", ", ".join(known_users.keys()) or "(none)")
+                    
+
+
                 else:
                     print("Commands: /tell <user> <msg> | /list")
 
