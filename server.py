@@ -197,12 +197,17 @@ async def handle_user_hello(websocket, env):
 async def handle_msg_direct(env):
     target = env.get("to")
     if target in local_users:
+        deliver_payload = dict(env.get("payload", {}))
+        # Ensure sender is present in payload
+        if "sender" not in deliver_payload:
+            deliver_payload["sender"] = env.get("from")
+
         deliver = {
             "type": "USER_DELIVER",
             "from": "server",
             "to": target,
             "ts": env.get("ts"),
-            "payload": env.get("payload"),
+            "payload": deliver_payload,   # ✅ use the fixed payload
             "sig": ""
         }
         try:
@@ -212,6 +217,7 @@ async def handle_msg_direct(env):
             print(f"❌ Failed to deliver to {target}: {e}")
     else:
         print(f"⚠️ MSG_DIRECT target {target} not connected locally")
+
 
 async def handle_client(websocket):
     try:
