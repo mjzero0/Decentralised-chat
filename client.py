@@ -20,7 +20,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 
 SERVER_HOST = "10.13.114.172"  # adjust to your server IP
-SERVER_PORT = 9002
+SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"
 USER_ID_FILE = "user_id.txt"
@@ -176,9 +176,10 @@ async def login():
 
                     elif mtype == "USER_ADVERTISE":
                         uid = env["payload"]["user_id"]
-                        uname = env["payload"].get("username")
-                        pubkey = env["payload"].get("pubkey")
-                        if uname and pubkey:
+                        uname = env["payload"]["meta"].get("username")
+                        pubkey = env["payload"]["meta"].get("pubkey")
+                        if uname is not None and pubkey is not None:
+                            print("uessefsdf")
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
                             print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
