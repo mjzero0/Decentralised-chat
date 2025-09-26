@@ -2,8 +2,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 # Generate RSA private key
-private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
-
+private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 # Save private key to PEM file
 with open("server_priv.pem", "wb") as f:
