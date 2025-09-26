@@ -18,12 +18,12 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "127.0.0.1"
+INTRODUCER_HOST = "10.13.104.41"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
 # Bind to all interfaces by default so teammates can connect over LAN.
-MY_HOST = os.getenv("MY_HOST", "0.0.0.0")
+MY_HOST = os.getenv("MY_HOST", "10.13.114.172")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # ---------- In-memory tables ----------

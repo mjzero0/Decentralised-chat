@@ -19,7 +19,7 @@ from common import (
 )
 from cryptography.hazmat.primitives import serialization
 
-SERVER_HOST = "127.0.0.1"  # adjust to your server IP
+SERVER_HOST = "10.13.114.172"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"
