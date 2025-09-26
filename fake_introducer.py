@@ -45,22 +45,9 @@ async def handle_join(websocket):
                         
                 connected_servers[server_id] = websocket
                 
-                temp_servers = bootstrap_servers
+                temp_servers = bootstrap_servers.copy()
                 
-                bootstrap_servers.append({ "server_id": server_id, "host": host, "port": port, "pubkey": pubkey})
-                
-                # server_list = []
-                # for sid in connected_servers:
-                #     if sid == server_id:
-                #         continue
-                #     host, port = server_addrs.get(sid, ("unknown", 0))
-                #     pubkey = server_pubkeys.get(sid, "Fake Public Key")
-                #     server_list.append({
-                #         "server_id": sid,
-                #         "host": host,
-                #         "port": port,
-                #         "pubkey": pubkey
-                #     })
+                bootstrap_servers.append({"server_id": server_id, "host": host, "port": port, "pubkey": pubkey})
 
                 # Send WELCOME
                 welcome = {
@@ -76,17 +63,6 @@ async def handle_join(websocket):
                 }
                 await websocket.send(to_json(welcome))
                 print(f"📤 Sent SERVER_WELCOME to {server_id}")
-
-            elif mtype == "SERVER_ANNOUNCE":
-                print(f"📡 Received SERVER_ANNOUNCE from {env['from']}")
-
-                for other_id, other_ws in connected_servers.items():
-                    if other_id != env["from"]:
-                        try:
-                            await other_ws.send(to_json(env))
-                            print(f"📣 Relayed SERVER_ANNOUNCE to {other_id}")
-                        except Exception as e:
-                            print(f"❌ Failed to relay to {other_id}: {e}")
 
             else:
                 print(f"ℹ️ Unhandled message type: {mtype}")
