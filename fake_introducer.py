@@ -15,9 +15,14 @@ def to_json(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
 connected_servers = {} # server_id -> websocket
-# servers = {}           # server_id -> websocket (server↔server links)
-# server_addrs = {}      # server_id -> (host, port)
-# server_pubkeys = {}    # server_id -> pubkey_b64u
+bootstrap_servers = [] # server_id -> (host, port, pubkey)
+# [
+#   server_id: {
+#       "host": str,
+#       "port": int,
+#       "pubkey": str
+#   }
+# ]
 # user_locations = {}    # user_id -> "local" | server_id
 
 async def handle_join(websocket):
@@ -29,9 +34,9 @@ async def handle_join(websocket):
 
             if mtype == "SERVER_HELLO_JOIN":
                 server_id = env["from"]
-                # pubkey = env["payload"]["pubkey"]
-                # host = env["payload"]["host"]
-                # port = env["payload"]["port"]
+                pubkey = env["payload"]["pubkey"]
+                host = env["payload"]["host"]
+                port = env["payload"]["port"]
                 
                 # server_id is checked within network to verify its uniqueness. If it is, return same ID, 
                 # otherwise return new unique ID
@@ -39,8 +44,10 @@ async def handle_join(websocket):
                     server_id = str(uuid.uuid4())
                         
                 connected_servers[server_id] = websocket
-                # server_addrs[server_id] = (host, port)
-                # server_pubkeys[server_id] = pubkey
+                
+                temp_servers = bootstrap_servers
+                
+                bootstrap_servers.append({ "server_id": server_id, "host": host, "port": port, "pubkey": pubkey})
                 
                 # server_list = []
                 # for sid in connected_servers:
@@ -63,12 +70,7 @@ async def handle_join(websocket):
                     "ts": now_ms(),
                     "payload": {
                         "assigned_id": server_id,
-                        # TODO: HOW TO UPDATE THIS???
-                        # "clients": [
-                        #     {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
-                        #     {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
-                        # ]
-                        # "servers": server_list
+                        "clients": temp_servers
                     },
                     "sig": ""
                 }

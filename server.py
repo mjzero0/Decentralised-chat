@@ -32,6 +32,7 @@ server_pubkeys = {}    # server_id -> pubkey_b64u (learned via SERVER_ANNOUNCE)
 local_users = {}       # local user table: user_id -> {"ws": websocket, "pubkey": str}
 user_locations = {}    # user_id -> "local" | server_id
 seen_ids = set()       # {(ts, from, to, sha256(payload))}
+user_pubkey = {}       # users from other server's public key
 
 # Assigned after SERVER_WELCOME
 server_id = None
@@ -62,6 +63,7 @@ def dedup_or_remember(env: dict) -> bool:
         seen_ids.update(seen_ids_copy)
     return False
 
+# Broadcast only within one server
 async def broadcast(msg):
     dead = []
     for uid, info in local_users.items():
@@ -124,9 +126,19 @@ async def handle_msg_direct(env):
             "payload": env["payload"],
             "sig": ""
         }
-=======
-
-def make_server_announce(from_id: str, host: str, port: int, pubkey_b64u: str) -> dict:
+        
+async def make_server_hello_join(_temp_server_id: str, host: str, port: int) -> dict:
+    # HELLO is allowed unsigned per your notes
+    return {
+        "type": "SERVER_HELLO_JOIN",
+        "from": _temp_server_id,
+        "to": f"{host}:{port}",
+        "ts": int(time.time() * 1000),
+        "payload": {"host": host, "port": port, "pubkey": server_pub_b64u},
+        "sig": ""
+    }
+    
+async def make_server_announce(from_id: str, host: str, port: int, pubkey_b64u: str) -> dict:
     return make_signed_envelope(
         "SERVER_ANNOUNCE", from_id, "*",
         {"host": host, "port": port, "pubkey": pubkey_b64u},
@@ -196,17 +208,17 @@ async def handle_send_user_info(envelope):
     payload = envelope.get("payload", {})
     user_id = payload.get("user_id")
     connected_server_id = payload.get("connected_server_id")
-    # pubkey = payload.get("pubkey") TODO: pubkey
+    pubkey = payload.get("pubkey")
 
     if server_id and connected_server_id == server_id:
         return
-    # TODO: uncomment the following lines
-    # if not (connected_server_id and pubkey):
-    #     print(f"⚠️ Malformed SEND_USER_INFO: {envelope}")
-    #     return
+    
+    if not (connected_server_id and pubkey):
+        print(f"⚠️ Malformed SEND_USER_INFO: {envelope}")
+        return
 
     user_locations[user_id] = connected_server_id
-    # TODO: user_pubkeys[user_id] = pubkey
+    user_pubkey[user_id] = pubkey
     print(f"🆕 Registered user {user_id} at {connected_server_id}")
 
         
@@ -246,8 +258,8 @@ async def connect_to_other_server(host, port, _server_id):
                 "ts": int(time.time() * 1000),
                 "payload": {
                     "user_id": user_id,
-                    "connected_server_id": connected_server_id
-                    # "pubkey": pubkey
+                    "connected_server_id": connected_server_id,
+                    "pubkey": pubkey
                 },
                 "sig": ""  # TODO: add signiture??
             }
@@ -259,7 +271,7 @@ async def connect_to_other_server(host, port, _server_id):
 
 
 async def handle_server_announce(envelope: dict):
-    # (Optional) verify this ANNOUNCE if we already have sender's pubkey.
+    # Verify this ANNOUNCE if we already have sender's pubkey.
     from_id = envelope.get("from")
     payload = envelope.get("payload", {})
     host = payload.get("host")
@@ -311,7 +323,7 @@ async def handle_user_advertise(envelope):
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
-
+            
 async def broadcast_user_remove(user_id: str, _server_id: str):
     payload = {"user_id": user_id, "server_id": _server_id}
     envelope = make_signed_envelope("USER_REMOVE", _server_id, "*", payload, server_priv)
@@ -319,10 +331,36 @@ async def broadcast_user_remove(user_id: str, _server_id: str):
 
     for sid, ws in servers.items():
         try:
-            await local_users[target]["ws"].send(json.dumps(deliver))
-            print(f"✅ USER_DELIVER sent to {target}")
+            await ws.send(json.dumps(envelope))
         except Exception as e:
-            print(f"❌ Failed to deliver to {target}: {e}")
+            print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
+            
+async def handle_user_remove(envelope):
+    if dedup_or_remember(envelope):
+        return
+
+    sender = envelope.get("from")
+    if sender in server_pubkeys:
+        if not verify_transport_sig(envelope, server_pubkeys[sender]):
+            print(f"❌ Invalid signature on USER_REMOVE from {sender}")
+            return
+
+    payload = envelope["payload"]
+    user_id = payload["user_id"]
+    target_server = payload["server_id"]
+
+    if user_locations.get(user_id) == target_server:
+        del user_locations[user_id]
+        print(f"🗑️ Removed {user_id} from user_locations")
+    else:
+        print(f"⚠️ Skipped removal of {user_id}: mismatch server_id")
+
+    # Gossip forward
+    # for sid, ws in servers.items():
+    #     try:
+    #         await ws.send(json.dumps(envelope))
+    #     except Exception as e:
+    #         print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
 
 async def handle_client(websocket):
     try:
@@ -369,11 +407,97 @@ async def handle_client(websocket):
                     "sig": ""
                 }
                 await broadcast(rm)
+                
+async def handle_connection(websocket):
+    try:
+        while True:
+            raw = await websocket.recv()
+            envelope = json.loads(raw)
+            mtype = envelope.get("type")
 
+            # Drop duplicate frames early
+            if mtype in ("USER_ADVERTISE", "USER_REMOVE", "SERVER_DELIVER") and dedup_or_remember(envelope):
+                continue
+
+            if mtype == "USER_HELLO":
+                user_id = envelope["from"]
+                await handle_user_hello(user_id, websocket)
+
+            elif mtype == "USER_ADVERTISE":
+                await handle_user_advertise(envelope)
+
+            elif mtype == "MSG_DIRECT":
+                await handle_msg_direct(envelope)
+
+            elif mtype == "USER_REMOVE":
+                await handle_user_remove(envelope)
+
+            elif mtype == "SERVER_ANNOUNCE":
+                await handle_server_announce(envelope)
+
+            else:
+                print(f"📩 Unknown or unhandled message type: {mtype}")
+
+    except Exception as e:
+        print(f"⚠️ Connection closed or error: {e}")
+
+        # Detect a user disconnect
+        disconnected_user = None
+        for uid, link in list(local_users.items()):
+            if link == websocket:
+                disconnected_user = uid
+                break
+
+        if disconnected_user:
+            del local_users[disconnected_user]
+            user_locations.pop(disconnected_user, None)
+            await broadcast_user_remove(disconnected_user, server_id)
+            print(f"👋 User {disconnected_user} disconnected and removed.")
+
+# -------------------------
+# BOOTSTRAP
+# -------------------------
+
+async def join_network():
+    try:
+        hello = make_server_hello_join(server_id, INTRODUCER_HOST, INTRODUCER_PORT)
+
+        uri = f"ws://{INTRODUCER_HOST}:{INTRODUCER_PORT}"
+        async with websockets.connect(uri) as websocket:
+            print("🛰️ Connected to introducer")
+            await websocket.send(to_json(hello))
+            print("📤 Sent SERVER_HELLO_JOIN")
+
+            while True:
+                raw = await websocket.recv()
+                msg = json.loads(raw)
+                mtype = msg.get("type")
+
+                if mtype == "SERVER_WELCOME":
+                    handle_server_welcome(msg)
+                    if server_id:
+                        announce = make_server_announce(server_id, MY_HOST, MY_PORT, server_pub_b64u)
+                        await websocket.send(to_json(announce))
+                        print(f"📣 Sent SERVER_ANNOUNCE for {server_id} ({MY_HOST}:{MY_PORT})")
+
+                elif mtype == "SERVER_ANNOUNCE":
+                    await handle_server_announce(msg)
+
+                else:
+                    print(f"!!! Unhandled message type from introducer: {mtype} !!!")
+
+    except websockets.exceptions.ConnectionClosedOK:
+        print("✅ Introducer closed connection (1000): normal after welcome.")
+        
 async def main():
-    async with websockets.serve(handle_client, "0.0.0.0", 9001):
-        print("🌐 Server running on ws://0.0.0.0:9001")
-        await asyncio.Future()  # run forever
+    print(f"🚀 Starting WebSocket server on {MY_HOST}:{MY_PORT}")
+    ws_server = await websockets.serve(handle_connection, MY_HOST, MY_PORT)
+    await join_network()
+
+# async def main():
+#     async with websockets.serve(handle_client, "0.0.0.0", 9001):
+#         print("🌐 Server running on ws://0.0.0.0:9001")
+#         await asyncio.Future()  # run forever
 
 if __name__ == "__main__":
     asyncio.run(main())
