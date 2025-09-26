@@ -153,9 +153,6 @@ async def login_or_signup(mode="login"):
                         print(f"❌ Failed to send DM: {e}")
                 elif cmd == "/list":
                     print("Known users:", ", ".join(known_users.keys()) or "(none)")
-                    
-
-
                 else:
                     print("Commands: /tell <user> <msg> | /list")
 
@@ -182,6 +179,29 @@ async def login_or_signup(mode="login"):
                             print(f"👋 {uname} disconnected")
                         else:
                             print(f"👋 User {uid[:8]}… disconnected")
+
+                    elif mtype == "USER_DELIVER":
+                        payload = env["payload"]
+                        try:
+                            # Decrypt
+                            ciphertext_b64u = payload["ciphertext"]
+                            ciphertext = base64.urlsafe_b64decode(ciphertext_b64u + "==")
+                            plaintext = rsa_oaep_decrypt(priv, ciphertext).decode("utf-8")
+
+                            # Verify signature
+                            sender_pub = load_public_key_b64u(payload["sender_pub"])
+                            content_sig = payload["content_sig"]
+                            ts = env["ts"]
+                            sender_id = payload.get("sender")
+                            ok = verify_dm_content_sig(sender_pub, ciphertext_b64u, sender_id, user_id, ts, content_sig)
+
+                            if ok:
+                                print(f"💬 DM from {sender_id}: {plaintext}")
+                            else:
+                                print("⚠️ Signature verification failed!")
+                        except Exception as e:
+                            print(f"❌ Failed to decrypt message: {e}")
+
                     else:
                         print(f"📩 {env}")
             except websockets.exceptions.ConnectionClosed as e:
