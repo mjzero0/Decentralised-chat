@@ -14,11 +14,7 @@ def now_ms():
 def to_json(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
-connected_servers = {} # server_id -> websocket
-# servers = {}           # server_id -> websocket (server↔server links)
-# server_addrs = {}      # server_id -> (host, port)
-# server_pubkeys = {}    # server_id -> pubkey_b64u
-# user_locations = {}    # user_id -> "local" | server_id
+connected_servers = {}  # server_id -> websocket
 
 async def handle_join(websocket):
     server_id = None
@@ -29,33 +25,14 @@ async def handle_join(websocket):
 
             if mtype == "SERVER_HELLO_JOIN":
                 server_id = env["from"]
-                # pubkey = env["payload"]["pubkey"]
-                # host = env["payload"]["host"]
-                # port = env["payload"]["port"]
                 
                 # server_id is checked within network to verify its uniqueness. If it is, return same ID, 
                 # otherwise return new unique ID
                 while server_id in connected_servers.keys():
                     server_id = str(uuid.uuid4())
-                        
                 connected_servers[server_id] = websocket
-                # server_addrs[server_id] = (host, port)
-                # server_pubkeys[server_id] = pubkey
-                
-                # server_list = []
-                # for sid in connected_servers:
-                #     if sid == server_id:
-                #         continue
-                #     host, port = server_addrs.get(sid, ("unknown", 0))
-                #     pubkey = server_pubkeys.get(sid, "Fake Public Key")
-                #     server_list.append({
-                #         "server_id": sid,
-                #         "host": host,
-                #         "port": port,
-                #         "pubkey": pubkey
-                #     })
 
-                # Send WELCOME
+                # 发送 WELCOME
                 welcome = {
                     "type": "SERVER_WELCOME",
                     "from": "introducer-0000-0000",
@@ -64,11 +41,10 @@ async def handle_join(websocket):
                     "payload": {
                         "assigned_id": server_id,
                         # TODO: HOW TO UPDATE THIS???
-                        # "clients": [
-                        #     {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
-                        #     {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
-                        # ]
-                        # "servers": server_list
+                        "clients": [
+                            {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
+                            {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
+                        ]
                     },
                     "sig": ""
                 }
