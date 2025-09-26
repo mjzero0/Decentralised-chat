@@ -81,39 +81,54 @@ async def handle_user_hello(websocket, env):
     pubkey = payload.get("pubkey")
     username = payload.get("username")
 
+    # check duplicate
+    if user_id in local_users or user_id in user_locations:
+        error_msg = make_signed_envelope(
+            "ERROR", server_id, user_id,
+            {"code": "NAME_IN_USE", "detail": f"user_id {user_id} already exists"},
+            server_priv
+        )
+        await websocket.send(json.dumps(error_msg))
+        print(f"❌ Duplicate user_id: {user_id}, rejected.")
+        return
+
     local_users[user_id] = {"ws": websocket, "pubkey": pubkey, "username": username}
+    user_locations[user_id] = "local"
     print(f"👋 New user {username} ({user_id}) connected.")
 
-    now = int(time.time() * 1000)
+    # broadcast local users to the new server
+    for uid, info in local_users.items():
+        if uid == user_id: 
+            continue
+        msg = make_signed_envelope(
+            "USER_ADVERTISE", server_id, user_id,
+            {"user_id": uid, "server_id": server_id, "meta": {"username": info["username"]}},
+            server_priv
+        )
+        await websocket.send(json.dumps(msg))
 
-    # Tell newcomer about existing users
-    for uid, info in list(local_users.items()):
-        if uid == user_id: continue
-        advertise_existing = {
-            "type": "USER_ADVERTISE",
-            "from": "server",
-            "to": user_id,
-            "ts": now,
-            "payload": {
-                "user_id": uid,
-                "username": info.get("username"),
-                "pubkey": info.get("pubkey")
-            },
-            "sig": ""
-        }
-        await websocket.send(json.dumps(advertise_existing))
-
-    # Broadcast newcomer
-    advertise_new = {
-        "type": "USER_ADVERTISE",
-        "from": "server",
-        "to": "*",
-        "ts": now,
-        "payload": {"user_id": user_id, "username": username, "pubkey": pubkey},
-        "sig": ""
+    advertise_payload = {
+        "user_id": user_id,
+        "server_id": server_id,
+        "meta": {"username": username, "pubkey": pubkey}
     }
+    advertise = make_signed_envelope("USER_ADVERTISE", server_id, "*", advertise_payload, server_priv)
 
-    await broadcast(advertise_new)
+    # broadcast to local users
+    await broadcast(advertise)
+    print(f"📡 Broadcasted USER_ADVERTISE for {user_id} to local users")
+
+    # gossip to other servers
+    for sid, ws in servers.items():
+        if sid == server_id:
+            continue
+        try:
+            await ws.send(json.dumps(advertise))
+        except Exception as e:
+            print(f"❌ Gossip to {sid} failed: {e}")
+
+    print(f"📡 Gossip USER_ADVERTISE for {user_id} to {len(servers)} peers")
+
 
 
 async def handle_msg_direct(env):
@@ -315,12 +330,12 @@ async def handle_connection(websocket):
             mtype = envelope.get("type")
 
             # Drop duplicate frames early
-            if mtype in ("USER_ADVERTISE", "USER_REMOVE", "SERVER_DELIVER") and dedup_or_remember(envelope):
-                continue
+            # if mtype in ("USER_ADVERTISE", "USER_REMOVE", "SERVER_DELIVER") and dedup_or_remember(envelope):
+            #     continue
 
             if mtype == "USER_HELLO":
-                user_id = envelope["from"]
-                await handle_user_hello(user_id, websocket)
+                # user_id = envelope["from"]
+                await handle_user_hello(websocket, envelope)
                 
             elif mtype == "SERVER_HELLO_LINK":
                 sid = envelope["from"]
@@ -344,12 +359,15 @@ async def handle_connection(websocket):
             
     except Exception as e:
         print(f"❌ Client handler error: {e}")
+        
     finally:
         # Remove user if disconnected
         for uid, info in list(local_users.items()):
             if info["ws"] == websocket:
                 del local_users[uid]
                 print(f"👋 User {uid} disconnected.")
+                user_locations.pop(uid, None)
+                await broadcast_user_remove(uid, server_id)
                 # Broadcast removal
                 rm = {
                     "type": "USER_REMOVE",

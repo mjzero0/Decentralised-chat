@@ -64,3 +64,63 @@ async def main():
     async with websockets.serve(handle_client, "0.0.0.0", 9001):
         print("🌐 Server running on ws://0.0.0.0:9001")
         await asyncio.Future()  # run forever
+        
+        
+        
+async def handle_user_hello(websocket, env):
+    user_id = env["from"]
+    payload = env["payload"]
+    pubkey = payload.get("pubkey")
+    username = payload.get("username")
+
+    local_users[user_id] = {"ws": websocket, "pubkey": pubkey, "username": username}
+    print(f"👋 New user {username} ({user_id}) connected.")
+
+    now = int(time.time() * 1000)
+
+    # Tell newcomer about existing users
+    for uid, info in list(local_users.items()):
+        if uid == user_id: continue
+        advertise_existing = {
+            "type": "USER_ADVERTISE",
+            "from": "server",
+            "to": user_id,
+            "ts": now,
+            "payload": {
+                "user_id": uid,
+                "username": info.get("username"),
+                "pubkey": info.get("pubkey")
+            },
+            "sig": ""
+        }
+        await websocket.send(json.dumps(advertise_existing))
+
+    # Broadcast newcomer
+    advertise_new = {
+        "type": "USER_ADVERTISE",
+        "from": "server",
+        "to": "*",
+        "ts": now,
+        "payload": {"user_id": user_id, "username": username, "pubkey": pubkey},
+        "sig": ""
+    }
+
+    await broadcast(advertise_new)
+    
+    # Simple duplicate guard
+    if user_id in local_users or user_id in user_locations:
+        error_msg = {"type": "ERROR", "code": "NAME_IN_USE", "reason": f"user_id '{user_id}' already exists"}
+        await websocket.send(json.dumps(error_msg))
+        print(f"❌ Duplicate user_id: {user_id}, rejected.")
+        return
+
+    local_users[user_id] = websocket
+    user_locations[user_id] = "local"
+
+    payload = {"user_id": user_id, "server_id": server_id, "meta": {}}
+    env = make_signed_envelope("USER_ADVERTISE", server_id, "*", payload, server_priv)
+    print(f"📣 New user {user_id} connected.")
+
+    for ws in servers.values():
+        await ws.send(json.dumps(env))
+    print(f"📡 Broadcasting USER_ADVERTISE for {user_id}")
