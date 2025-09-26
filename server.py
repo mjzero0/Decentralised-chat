@@ -18,12 +18,12 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.114.172"
+INTRODUCER_HOST = "192.168.0.219"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
 # Bind to all interfaces by default so teammates can connect over LAN.
-MY_HOST = os.getenv("MY_HOST", "10.13.114.172")
+MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # ---------- In-memory tables ----------
@@ -68,6 +68,9 @@ def dedup_or_remember(env: dict) -> bool:
 async def broadcast(msg):
     dead = []
     for uid, info in local_users.items():
+        payload = msg.get("payload")
+        if uid == payload["user_id"]:
+            continue
         try:
             await info["ws"].send(json.dumps(msg))
         except Exception:
@@ -96,16 +99,16 @@ async def handle_user_hello(websocket, env):
     user_locations[user_id] = "local"
     print(f"👋 New user {username} ({user_id}) connected.")
 
-    # # broadcast local users to the new server
-    # for uid, info in local_users.items():
-    #     if uid == user_id: 
-    #         continue
-    #     msg = make_signed_envelope(
-    #         "USER_ADVERTISE", server_id, user_id,
-    #         {"user_id": uid, "server_id": server_id, "meta": {"username": info["username"]}},
-    #         server_priv
-    #     )
-    #     await websocket.send(json.dumps(msg))
+    # broadcast local users to the new server
+    for uid, info in local_users.items():
+        if uid == user_id: 
+            continue
+        msg = make_signed_envelope(
+            "USER_ADVERTISE", server_id, user_id,
+            {"user_id": uid, "server_id": server_id, "meta": {"username": info["username"], "pubkey": info["pubkey"]}},
+            server_priv
+        )
+        await websocket.send(json.dumps(msg))
 
     advertise_payload = {
         "user_id": user_id,
@@ -130,17 +133,71 @@ async def handle_user_hello(websocket, env):
     print(f"📡 Gossip USER_ADVERTISE for {user_id} to {len(servers)} servers")
 
 
-async def handle_msg_direct(env):
-    target = env["to"]
-    if target in local_users:
-        deliver = {
-            "type": "USER_DELIVER",
-            "from": "server",
-            "to": target,
-            "ts": env["ts"],
-            "payload": env["payload"],
-            "sig": ""
-        }
+# async def handle_msg_direct(env):
+#     target = env["to"]
+#     if target in local_users:
+#         deliver = {
+#             "type": "USER_DELIVER",
+#             "from": "server",
+#             "to": target,
+#             "ts": env["ts"],
+#             "payload": env["payload"],
+#             "sig": ""
+#         }
+        
+async def handle_user_deliver(from_user, to_user, payload):
+    if to_user not in local_users:
+        print(f"❌ Local user {to_user} not connected.")
+        return
+
+    user_payload = {
+        "ciphertext": payload["ciphertext"],
+        "sender": from_user,
+        "sender_pub": payload["sender_pub"],
+        "content_sig": payload["content_sig"],
+    }
+    env = make_signed_envelope("USER_DELIVER", server_id, to_user, user_payload, server_priv)
+    await local_users[to_user].send(json.dumps(env))
+    print(f"✅ USER_DELIVER sent to {to_user}")
+
+def make_server_deliver(envelope: dict, to_server: str):
+    payload = envelope["payload"]
+    user_payload = {
+        "user_id": envelope["to"],
+        "ciphertext": payload["ciphertext"],
+        "sender": envelope["from"],
+        "sender_pub": payload["sender_pub"],
+        "content_sig": payload["content_sig"],
+    }
+    return make_signed_envelope("SERVER_DELIVER", server_id, to_server, user_payload, server_priv)
+
+async def handle_server_deliver(envelope):
+    # Forward to the server where the recipient lives (or deliver locally)
+    user_id = envelope["to"]
+    dest = user_locations.get(user_id)
+
+    if dest == "local":
+        print(f"ℹ️ SERVER_DELIVER reached home server; handing to user.")
+        await handle_user_deliver(envelope["payload"]["sender"], user_id, envelope["payload"])
+        return
+
+    if isinstance(dest, str) and dest in servers:
+        new_env = make_server_deliver(envelope, dest)
+        if not dedup_or_remember(new_env):
+            print(f"🔁 Forwarding to server {dest}")
+            await servers[dest].send(json.dumps(new_env))
+    else:
+        print(f"❌ USER_NOT_FOUND: {user_id} (cannot route)")
+
+async def handle_msg_direct(envelope):
+    # (Optional) verify transport sig from users later once you store user pubkeys from USER_HELLO
+    from_user = envelope["from"]
+    to_user = envelope["to"]
+    payload = envelope["payload"]
+    if user_locations.get(to_user) == "local":
+        await handle_user_deliver(from_user, to_user, payload)
+    else:
+        await handle_server_deliver(envelope)  
         
 async def make_server_hello_join(_temp_server_id: str, host: str, port: int) -> dict:
     # HELLO is allowed unsigned per your notes

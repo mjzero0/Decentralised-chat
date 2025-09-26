@@ -19,7 +19,7 @@ from common import (
 )
 from cryptography.hazmat.primitives import serialization
 
-SERVER_HOST = "10.13.114.172"  # adjust to your server IP
+SERVER_HOST = "192.168.0.219"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"
@@ -102,12 +102,12 @@ async def login():
                         message = " ".join(msg_parts).encode("utf-8")
                         
                         if target_name not in known_users:
-                            print(f"⚠️ Don’t know user {target_name}")
+                            print(f"⚠️ Don't know user {target_name}")
                             continue
                         target_id = known_users[target_name]["uuid"]
                         recip_pub_b64u = known_users[target_name]["pubkey"]
                         if not recip_pub_b64u:
-                            print(f"⚠️ Don’t know pubkey for {target_id}")
+                            print(f"⚠️ Don't know pubkey for {target_id}")
                             continue
                         recip_pub = load_public_key_b64u(recip_pub_b64u)
 
@@ -119,7 +119,7 @@ async def login():
 
                         payload = {
                             "ciphertext": ciphertext_b64u,
-                            "sender": user_id, 
+                            # "sender": user_id, 
                             "sender_pub": pub_b64u,
                             "content_sig": content_sig
                         }
@@ -169,7 +169,7 @@ async def login():
                                 sender_name = uuid_lookup.get(sender_uuid, sender_uuid[:8])  # fallback: uuid prefix
                                 print(f"\n💬 DM from {sender_name}: {plaintext}")
                             else:
-                                print(f"\n⚠️ DM received but signature invalid: {plaintext}")
+                                print(f"\n⚠️ DM received but signature invalid!")
 
                         except Exception as e:
                             print(f"\n❌ Failed to decrypt DM: {e}")
@@ -179,17 +179,17 @@ async def login():
                         uname = env["payload"]["meta"].get("username")
                         pubkey = env["payload"]["meta"].get("pubkey")
                         if uname is not None and pubkey is not None:
-                            print("uessefsdf")
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
+                            print(f"✅ User {uname} is connected.")
                             print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
                     
-                    elif mtype == "USER_REMOVE": #this is for other clients to get a message when a client is disconnected
+                    elif mtype == "USER_REMOVE": # this is for other clients to get a message when a client is disconnected
                         uid = env["payload"]["user_id"]
                         uname = uuid_lookup.pop(uid, None)   # remove from reverse map
                         if uname:
                             known_users.pop(uname, None)
-                            print(f"👋 {uname} disconnected")
+                            print(f"👋 User {uname} disconnected")
                         else:
                             print(f"👋 User {uid[:8]}… disconnected")
 
