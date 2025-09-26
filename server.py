@@ -18,7 +18,7 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.104.41"
+INTRODUCER_HOST = "10.13.114.172"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
@@ -96,16 +96,16 @@ async def handle_user_hello(websocket, env):
     user_locations[user_id] = "local"
     print(f"👋 New user {username} ({user_id}) connected.")
 
-    # broadcast local users to the new server
-    for uid, info in local_users.items():
-        if uid == user_id: 
-            continue
-        msg = make_signed_envelope(
-            "USER_ADVERTISE", server_id, user_id,
-            {"user_id": uid, "server_id": server_id, "meta": {"username": info["username"]}},
-            server_priv
-        )
-        await websocket.send(json.dumps(msg))
+    # # broadcast local users to the new server
+    # for uid, info in local_users.items():
+    #     if uid == user_id: 
+    #         continue
+    #     msg = make_signed_envelope(
+    #         "USER_ADVERTISE", server_id, user_id,
+    #         {"user_id": uid, "server_id": server_id, "meta": {"username": info["username"]}},
+    #         server_priv
+    #     )
+    #     await websocket.send(json.dumps(msg))
 
     advertise_payload = {
         "user_id": user_id,
@@ -127,8 +127,7 @@ async def handle_user_hello(websocket, env):
         except Exception as e:
             print(f"❌ Gossip to {sid} failed: {e}")
 
-    print(f"📡 Gossip USER_ADVERTISE for {user_id} to {len(servers)} peers")
-
+    print(f"📡 Gossip USER_ADVERTISE for {user_id} to {len(servers)} servers")
 
 
 async def handle_msg_direct(env):
@@ -329,7 +328,7 @@ async def handle_connection(websocket):
             envelope = json.loads(raw)
             mtype = envelope.get("type")
 
-            # Drop duplicate frames early
+            # # Drop duplicate frames early
             # if mtype in ("USER_ADVERTISE", "USER_REMOVE", "SERVER_DELIVER") and dedup_or_remember(envelope):
             #     continue
 
@@ -338,9 +337,15 @@ async def handle_connection(websocket):
                 await handle_user_hello(websocket, envelope)
                 
             elif mtype == "SERVER_HELLO_LINK":
+                
                 sid = envelope["from"]
-                servers[sid] = websocket
-                print(f"🔗 Registered server {sid} at {envelope['payload']['host']}:{envelope['payload']['port']}")
+                host = envelope["payload"]["host"]
+                port = envelope["payload"]["port"]
+                
+                uri = f"ws://{host}:{port}"
+                ws = await websockets.connect(uri)
+                print(f"🔗 Connected to server {sid} at {uri}")
+                servers[sid] = ws
 
             elif mtype == "USER_ADVERTISE":
                 await handle_user_advertise(envelope)
