@@ -469,8 +469,6 @@ async def login():
                         # Print anything unexpected to help debug
                         # print(f"📩 {env}")
                         pass
-                    
-                    print(f"📩 Received {mtype}: {env}")
 
             except websockets.exceptions.ConnectionClosed as e:
                 print(f"⚠️ Disconnected: {e}")
