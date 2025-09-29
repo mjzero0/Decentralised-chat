@@ -7,25 +7,6 @@ import hmac
 import hashlib
 import uuid
 
-from cryptography.hazmat.primitives import serialization
-from common import public_key_b64u_from_private, sign_transport_payload, verify_transport_sig, load_public_key_b64u
-
-SERVER_PRIVKEY = None
-SERVER_PUB_B64U = None
-
-def load_server_keys(priv_path="server_priv.pem"):
-    global SERVER_PRIVKEY, SERVER_PUB_B64U
-    if not os.path.exists(priv_path):
-        print(f"⚠️ server private key not found at {priv_path}. Run generate_keys.py")
-        return
-    with open(priv_path, "rb") as f:
-        pem = f.read()
-    SERVER_PRIVKEY = serialization.load_pem_private_key(pem, password=None)
-    # derive the base64url public key string used on the network
-    SERVER_PUB_B64U = public_key_b64u_from_private(SERVER_PRIVKEY)
-    print("🔑 Loaded server key pair.")
-
-
 # =========================
 # Simple persistent "DB"
 #   users_db.json structure:
@@ -70,7 +51,7 @@ async def broadcast(msg):
     dead = []
     for uid, info in local_users.items():
         try:
-            await sign_and_send(info["ws"], msg)
+            await info["ws"].send(json.dumps(msg))
         except Exception:
             dead.append(uid)
     for uid in dead:
@@ -123,8 +104,7 @@ async def handle_user_register(websocket, env):
         "payload": {"user_id": user_id},
         "sig": ""
     }
-    await sign_and_send(websocket, resp)
-
+    await websocket.send(json.dumps(resp))
     print(f"🆕 Registered user '{username}' ({user_id[:8]}…)")
 
 async def handle_auth_hello(websocket, env):
@@ -145,8 +125,7 @@ async def handle_auth_hello(websocket, env):
         "payload": {"nonce_b64": base64url_encode(nonce)},
         "sig": ""
     }
-    await sign_and_send(websocket, resp)
-
+    await websocket.send(json.dumps(resp))
     print(f"🔒 AUTH_CHALLENGE sent to '{username}'")
 
 async def handle_auth_response(websocket, env):
@@ -208,8 +187,7 @@ async def handle_auth_response(websocket, env):
             "sig": ""
         }
         try:
-            await sign_and_send(websocket, advertise_existing)
-
+            await websocket.send(json.dumps(advertise_existing))
         except Exception:
             pass
 
@@ -234,7 +212,7 @@ async def handle_auth_response(websocket, env):
         "sig": ""
     }
     try:
-        await sign_and_send(websocket, ok)
+        await websocket.send(json.dumps(ok))
     except Exception:
         pass
 
@@ -277,8 +255,7 @@ async def route_user_frame(env):
             deliver = env
 
         try:
-            await sign_and_send(local_users[target]["ws"], deliver)
-
+            await local_users[target]["ws"].send(json.dumps(deliver))
         except Exception as e:
             print(f"❌ Delivery failed to {target}: {e}")
     else:
@@ -309,8 +286,7 @@ async def send_error(websocket, code, detail):
         "sig": ""
     }
     try:
-        await sign_and_send(websocket, msg)
-
+        await websocket.send(json.dumps(msg))
     except Exception:
         pass
 
@@ -318,27 +294,6 @@ async def send_error(websocket, code, detail):
 def base64url_encode(b: bytes) -> str:
     import base64
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
-
-async def sign_and_send(ws, msg):
-    """
-    Sign the msg['payload'] with SERVER_PRIVKEY and send the JSON over websocket.
-    Use this instead of direct await ws.send(json.dumps(msg)).
-    """
-    # Ensure payload exists
-    if "payload" not in msg:
-        msg["payload"] = {}
-
-    if SERVER_PRIVKEY:
-        try:
-            msg["sig"] = sign_transport_payload(SERVER_PRIVKEY, msg["payload"])
-        except Exception as e:
-            print("❌ sign_transport_payload failed:", e)
-            msg["sig"] = ""
-    else:
-        # fallback for dev: leave sig empty but warn
-        msg["sig"] = ""
-    await ws.send(json.dumps(msg))
-
 
 async def handle_client(websocket):
     try:
@@ -398,5 +353,4 @@ async def main():
         await asyncio.Future()
 
 if __name__ == "__main__":
-    load_server_keys("server_priv.pem")
     asyncio.run(main())
