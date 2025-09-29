@@ -23,7 +23,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = "10.13.104.41"  # adjust to your server IP
+SERVER_HOST = "172.30.80.1"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -380,12 +380,14 @@ async def login():
 
                     elif mtype == "USER_ADVERTISE":
                         uid = env["payload"]["user_id"]
-                        uname = env["payload"].get("username")
-                        pubkey = env["payload"].get("pubkey")
+                        meta = env["payload"].get("meta", {})
+                        uname = meta.get("username")
+                        pubkey = meta.get("pubkey")
                         if uname and pubkey:
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
                             print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
+
 
                     elif mtype == "USER_REMOVE":
                         uid = env["payload"]["user_id"]

@@ -14,7 +14,8 @@ def now_ms():
 def to_json(obj: dict) -> str:
     return json.dumps(obj) + "\n"
 
-connected_servers = {}  # server_id -> websocket
+connected_servers = {} # server_id -> websocket
+bootstrap_servers = [] # server_id -> (host, port, pubkey)
 
 async def handle_join(websocket):
     server_id = None
@@ -25,14 +26,22 @@ async def handle_join(websocket):
 
             if mtype == "SERVER_HELLO_JOIN":
                 server_id = env["from"]
+                pubkey = env["payload"]["pubkey"]
+                host = env["payload"]["host"]
+                port = env["payload"]["port"]
                 
                 # server_id is checked within network to verify its uniqueness. If it is, return same ID, 
                 # otherwise return new unique ID
                 while server_id in connected_servers.keys():
                     server_id = str(uuid.uuid4())
+                        
                 connected_servers[server_id] = websocket
+                
+                temp_servers = bootstrap_servers.copy()
+                
+                bootstrap_servers.append({"server_id": server_id, "host": host, "port": port, "pubkey": pubkey})
 
-                # 发送 WELCOME
+                # Send WELCOME
                 welcome = {
                     "type": "SERVER_WELCOME",
                     "from": "introducer-0000-0000",
@@ -40,27 +49,12 @@ async def handle_join(websocket):
                     "ts": now_ms(),
                     "payload": {
                         "assigned_id": server_id,
-                        # TODO: HOW TO UPDATE THIS???
-                        "clients": [
-                            {"user_id": str(uuid.uuid4()), "host": "1.2.3.4", "port": 1234, "pubkey": FAKE_PUBKEY},
-                            {"user_id": str(uuid.uuid4()), "host": "5.6.7.8", "port": 5678, "pubkey": FAKE_PUBKEY}
-                        ]
+                        "clients": temp_servers
                     },
                     "sig": ""
                 }
                 await websocket.send(to_json(welcome))
                 print(f"📤 Sent SERVER_WELCOME to {server_id}")
-
-            elif mtype == "SERVER_ANNOUNCE":
-                print(f"📡 Received SERVER_ANNOUNCE from {env['from']}")
-
-                for other_id, other_ws in connected_servers.items():
-                    if other_id != env["from"]:
-                        try:
-                            await other_ws.send(to_json(env))
-                            print(f"📣 Relayed SERVER_ANNOUNCE to {other_id}")
-                        except Exception as e:
-                            print(f"❌ Failed to relay to {other_id}: {e}")
 
             else:
                 print(f"ℹ️ Unhandled message type: {mtype}")
