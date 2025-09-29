@@ -22,14 +22,15 @@ The system supports secure end-to-end encrypted messaging between users across m
 ---
 
 
-
-
 ## Setup
 
 ### 1. Create and activate a virtual environment
 
 ```bash
 python -m venv venv
+```
+
+```bash
 source venv/bin/activate     # macOS/Linux
 venv\Scripts\activate        # Windows (PowerShell)
 ```
