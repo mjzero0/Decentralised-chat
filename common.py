@@ -166,67 +166,24 @@ def make_dm_content_sig(sender_privkey, ciphertext_b64u: str, sender_id: str, re
     sig = rsassa_pss_sign(sender_privkey, h)
     return b64u_encode(sig)
 
-# def verify_dm_content_sig(sender_pub_b64u: str, ciphertext_b64u: str, sender_id: str, recipient_id: str, ts: int, content_sig_b64u: str) -> bool:
-#     pub = load_public_key_b64u(sender_pub_b64u)
-#     digest = hashlib.sha256()
-#     digest.update(b64u_decode(ciphertext_b64u))
-#     digest.update(sender_id.encode())
-#     digest.update(recipient_id.encode())
-#     digest.update(str(ts).encode())
-#     h = digest.digest()
-#     try:
-#         pub.verify(
-#             b64u_decode(content_sig_b64u),
-#             h,
-#             padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
-#             hashes.SHA256()
-#         )
-#         return True
-#     except InvalidSignature:
-#         return False
-
-def verify_dm_content_sig(sender_pub_b64u: str,
-                          ciphertext_b64u: str,
-                          sender_id: str,
-                          recipient_id: str,
-                          ts: int,
-                          content_sig_b64u: str) -> bool:
+def verify_dm_content_sig(sender_pub_b64u: str, ciphertext_b64u: str, sender_id: str, recipient_id: str, ts: int, content_sig_b64u: str) -> bool:
     pub = load_public_key_b64u(sender_pub_b64u)
     digest = hashlib.sha256()
-    
-    # 打印 debug 信息
-    print("=== DM Signature Verification Debug ===")
-    print("ciphertext_b64u:", ciphertext_b64u[:60], "...")
-    print("sender_id:", sender_id)
-    print("recipient_id:", recipient_id)
-    print("ts:", ts)
-
-    # 逐步加字段
     digest.update(b64u_decode(ciphertext_b64u))
     digest.update(sender_id.encode())
     digest.update(recipient_id.encode())
     digest.update(str(ts).encode())
     h = digest.digest()
-
-    print("Computed digest (hex):", h.hex())
-    print("Provided content_sig_b64u:", content_sig_b64u)
-
     try:
         pub.verify(
             b64u_decode(content_sig_b64u),
             h,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
+            padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH),
             hashes.SHA256()
         )
-        print("✅ Signature valid")
         return True
     except InvalidSignature:
-        print("❌ Signature invalid")
         return False
-
 
 # NEW: build a signed envelope (transport sig) with supplied private key
 def make_signed_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, Any], transport_privkey):

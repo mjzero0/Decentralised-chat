@@ -296,24 +296,22 @@ async def handle_msg_direct(env):
 
     else:
         # get connected server id - dest
+        print("not local users!!!")
         dest = user_locations.get(to_user)
         if dest and dest in servers:
-            if env["type"] == "MSG_DIRECT":
-                forward = {
-                    "type": "SERVER_DELIVER",
-                    "from": server_id,
-                    "to": dest,
-                    "ts": env["ts"],
-                    "payload": {
-                        "user_id": to_user,
-                        **env["payload"]
-                        # "user_ts": env["ts"]
-                    },
-                    "sig": ""
-                }
-            else:
-                forward = env
-
+            print("direct msg!!!")
+            forward = {
+                "type": "SERVER_DELIVER",
+                "from": server_id,
+                "to": dest,
+                "ts": env["ts"],
+                "payload": {
+                    "inner_type": env["type"],   # MSG_DIRECT / FILE_START / FILE_CHUNK / FILE_END
+                    "user_id": to_user,
+                    **env["payload"]
+                },
+                "sig": ""
+            }
             await sign_and_send(servers[dest], forward)
         else:
             print(f"❌ USER_NOT_FOUND {to_user}")
@@ -439,26 +437,35 @@ async def handle_server_announce(envelope: dict):
 async def handle_server_deliver(envelope):
     # Forward to the server where the recipient lives (or deliver locally)
     target_user = envelope["payload"]["user_id"]
+    print("yesyesyes")
     
     if target_user not in local_users:
         print(f"❌ User {target_user} does not connect to this server.")
         return
     else:
-        payload = {
-            "ciphertext": envelope["payload"]["ciphertext"],
-            "sender": envelope["payload"]["sender"],
-            "sender_pub": envelope["payload"]["sender_pub"],
-            "content_sig": envelope["payload"]["content_sig"]
-        }
-        deliver = {
-            "type": "USER_DELIVER",
-            "from": server_id,
-            "to": target_user,
-            "ts": envelope["ts"],
-            "payload": payload,
-            "sig": ""
-        }
-        await sign_and_send(local_users[target_user]["ws"], deliver)
+        deliver = {}
+        if envelope["payload"]["inner_type"] == "MSG_DIRECT":
+            deliver = {
+                "type": "USER_DELIVER",
+                "from": server_id,
+                "to": target_user,
+                "ts": envelope["ts"],
+                "payload": envelope["payload"],
+                "sig": ""
+            }
+        else:
+            # FILE_START / FILE_CHUNK / FILE_END
+            deliver = {
+                "type": envelope["payload"]["inner_type"],
+                "from": server_id,
+                "to": target_user,
+                "ts": envelope["ts"],
+                "payload": envelope["payload"],
+                "sig": ""
+            }
+        print(f"deliver: {deliver["type"]}")
+        if deliver:
+            await sign_and_send(local_users[target_user]["ws"], deliver)
 
 # -------------------------
 # PRESENCE / GOSSIP
@@ -493,16 +500,16 @@ async def handle_user_advertise(envelope):
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
             
-async def broadcast_user_remove(user_id: str, _server_id: str):
-    payload = {"user_id": user_id, "server_id": _server_id}
-    envelope = make_signed_envelope("USER_REMOVE", _server_id, "*", payload, SERVER_PRIVKEY)
-    print(f"📤 Broadcasting USER_REMOVE for {user_id}")
+# async def broadcast_user_remove(user_id: str, _server_id: str):
+#     payload = {"user_id": user_id, "server_id": _server_id}
+#     envelope = make_signed_envelope("USER_REMOVE", _server_id, "*", payload, SERVER_PRIVKEY)
+#     print(f"📤 Broadcasting USER_REMOVE for {user_id}")
 
-    for sid, ws in servers.items():
-        try:
-            await ws.send(json.dumps(envelope))
-        except Exception as e:
-            print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
+#     for sid, ws in servers.items():
+#         try:
+#             await ws.send(json.dumps(envelope))
+#         except Exception as e:
+#             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
 async def handle_user_remove(envelope):
     if dedup_or_remember(envelope):
@@ -526,6 +533,8 @@ async def handle_user_remove(envelope):
 
     # Gossip forward
     for sid, ws in servers.items():
+        if sid == server_id:
+            continue
         try:
             await ws.send(json.dumps(envelope))
         except Exception as e:

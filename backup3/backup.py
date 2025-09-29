@@ -124,3 +124,11 @@ async def handle_user_hello(websocket, env):
     for ws in servers.values():
         await ws.send(json.dumps(env))
     print(f"📡 Broadcasting USER_ADVERTISE for {user_id}")
+    
+    # handle_server_deliver:
+    payload = {
+                "ciphertext": envelope["payload"]["ciphertext"],
+                "sender": envelope["payload"]["sender"],
+                "sender_pub": envelope["payload"]["sender_pub"],
+                "content_sig": envelope["payload"]["content_sig"]
+            }
