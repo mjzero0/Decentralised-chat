@@ -16,14 +16,6 @@ def to_json(obj: dict) -> str:
 
 connected_servers = {} # server_id -> websocket
 bootstrap_servers = [] # server_id -> (host, port, pubkey)
-# [
-#   server_id: {
-#       "host": str,
-#       "port": int,
-#       "pubkey": str
-#   }
-# ]
-# user_locations = {}    # user_id -> "local" | server_id
 
 async def handle_join(websocket):
     server_id = None
