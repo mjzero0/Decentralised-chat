@@ -283,6 +283,25 @@ async def handle_auth_response(ws, env):
             "sig": ""
         }
         await sign_and_send(ws, advertise_existing)
+        
+    # 1b. 告诉新用户：已有的远端用户
+    for uid, loc in list(user_locations.items()):
+        if uid == user_id:
+            continue
+        if loc != "local":  # 说明这个用户在其他 server
+            advertise_remote = {
+                "type": "USER_ADVERTISE",
+                "from": loc,   # 发送者应该是远端 server_id
+                "to": user_id,
+                "ts": now,
+                "payload": {
+                    "user_id": uid,
+                    "server_id": loc,
+                    "meta": {}  # 注意：我们可能不知道 username/pubkey，只能等远端 server 广播
+                },
+                "sig": ""
+            }
+            await sign_and_send(ws, advertise_remote)
 
     # 2. 告诉所有旧用户：新用户上线
     advertise_new = {
@@ -306,6 +325,7 @@ async def handle_auth_response(ws, env):
             await sign_and_send(ws2, advertise_new)
         except Exception:
             pass
+        
 
     # 3. 返回 AUTH_OK 给新用户
     ok = {
@@ -542,6 +562,7 @@ async def handle_user_advertise(envelope):
 
     user_locations[user_id] = src_server
     print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
+    await broadcast(envelope)
 
     # Gossip forward to other servers (except origin if we have a direct link to it)
     for sid, ws in servers.items():
@@ -589,6 +610,30 @@ async def handle_user_remove(envelope):
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
+            
+async def handle_server_deliver(env):
+    payload = env["payload"]
+    target_user = payload.get("user_id")
+
+    if user_locations.get(target_user) == "local":
+        # 转成本地 USER_DELIVER
+        deliver = {
+            "type": "USER_DELIVER",
+            "from": env["from"],  # 发送方 server_id
+            "to": target_user,
+            "ts": env["ts"],
+            "payload": payload,
+            "sig": ""  # 可以加 transport 签名
+        }
+        await sign_and_send(local_users[target_user]["ws"], deliver)
+    else:
+        dest = user_locations.get(target_user)
+        if dest and dest in servers:
+            # 再转发下去，避免丢包
+            await sign_and_send(servers[dest], env)
+        else:
+            print(f"❌ SERVER_DELIVER: user {target_user} not found")
+
             
 # -------------------------
 # INTRODUCER CONNECTION
@@ -662,9 +707,9 @@ async def handle_client(ws):
 
             elif mtype == "USER_REMOVE":
                 await handle_user_remove(env)
-
-            # elif mtype == "SERVER_DELIVER":
-            #     await handle_server_deliver(env)
+                
+            elif mtype == "SERVER_DELIVER":
+                await handle_server_deliver(env)
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")
