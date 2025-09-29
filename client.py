@@ -23,7 +23,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = "10.13.101.11"  # adjust to your server IP
+SERVER_HOST = "127.0.0.1"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -225,6 +225,8 @@ async def login():
 
                         payload = {
                             "ciphertext": ciphertext_b64u,
+                            # TODO: "sender" is not in the v1.3 protocol, but this design makes USER_DELIVER and  
+                            # SERVER_DELIVER easier - delete or not?
                             "sender": user_id,
                             "sender_pub": pub_b64u,
                             "content_sig": content_sig
@@ -369,7 +371,7 @@ async def login():
                                 if ok:
                                     print(f"\n💬 DM from {sender_name}: {plaintext}")
                                 else:
-                                    print(f"\n⚠️ DM signature invalid from {sender_name}: {plaintext}")
+                                    print(f"\n⚠️ DM signature invalid from {sender_name}.")
                             except Exception as e:
                                 print(f"\n❌ Failed to decrypt DM: {e}")
                         else:

@@ -22,11 +22,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.101.11"
+INTRODUCER_HOST = "127.0.0.1"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.101.11")
+MY_HOST = os.getenv("MY_HOST", "127.0.0.1")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -248,6 +248,8 @@ async def handle_auth_response(ws, env):
     }
     await broadcast(advertise_new)
     for sid, ws2 in servers.items():
+        if sid == server_id:
+            continue
         try:
             await sign_and_send(ws2, advertise_new)
         except Exception:
@@ -293,6 +295,7 @@ async def handle_msg_direct(env):
         await sign_and_send(local_users[to_user]["ws"], deliver)
 
     else:
+        # get connected server id - dest
         dest = user_locations.get(to_user)
         if dest and dest in servers:
             if env["type"] == "MSG_DIRECT":
@@ -300,11 +303,11 @@ async def handle_msg_direct(env):
                     "type": "SERVER_DELIVER",
                     "from": server_id,
                     "to": dest,
-                    "ts": now_ms(),
+                    "ts": env["ts"],
                     "payload": {
                         "user_id": to_user,
-                        **env["payload"],
-                        "user_ts": env["ts"]
+                        **env["payload"]
+                        # "user_ts": env["ts"]
                     },
                     "sig": ""
                 }
@@ -431,6 +434,31 @@ async def handle_server_announce(envelope: dict):
     server_addrs[from_id] = (host, int(port))
     server_pubkeys[from_id] = pubkey
     print(f"🆕 Registered server {from_id} @ {host}:{port}")
+    
+
+async def handle_server_deliver(envelope):
+    # Forward to the server where the recipient lives (or deliver locally)
+    target_user = envelope["payload"]["user_id"]
+    
+    if target_user not in local_users:
+        print(f"❌ User {target_user} does not connect to this server.")
+        return
+    else:
+        payload = {
+            "ciphertext": envelope["payload"]["ciphertext"],
+            "sender": envelope["payload"]["sender"],
+            "sender_pub": envelope["payload"]["sender_pub"],
+            "content_sig": envelope["payload"]["content_sig"]
+        }
+        deliver = {
+            "type": "USER_DELIVER",
+            "from": server_id,
+            "to": target_user,
+            "ts": envelope["ts"],
+            "payload": payload,
+            "sig": ""
+        }
+        await sign_and_send(local_users[target_user]["ws"], deliver)
 
 # -------------------------
 # PRESENCE / GOSSIP
@@ -562,10 +590,12 @@ async def handle_client(ws):
                 sid = env["from"]
                 payload = env["payload"]
                 host, port = payload["host"], payload["port"]
-                servers[sid] = ws
-                server_addrs[sid] = (host, port)
-                server_pubkeys[sid] = payload["pubkey"]
-                print(f"🔗 Registered server {sid} via SERVER_HELLO_LINK")
+                # server_addrs[sid] = (host, port)
+                # server_pubkeys[sid] = payload["pubkey"]
+                uri = f"ws://{host}:{port}"
+                websocket = await websockets.connect(uri)
+                servers[sid] = websocket
+                print(f"🔗 Connected to server {sid} at {uri} via SERVER_HELLO_LINK")
 
             elif mtype == "SERVER_ANNOUNCE":
                 await handle_server_announce(env)
@@ -576,8 +606,8 @@ async def handle_client(ws):
             elif mtype == "USER_REMOVE":
                 await handle_user_remove(env)
 
-            # elif mtype == "SERVER_DELIVER":
-            #     await handle_server_deliver(env)
+            elif mtype == "SERVER_DELIVER":
+                await handle_server_deliver(env)
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")
