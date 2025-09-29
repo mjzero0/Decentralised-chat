@@ -71,7 +71,6 @@ server_pubkeys = {}    # server_id -> pubkey_b64u
 local_users = {}       # user_id -> {"ws": websocket, "pubkey": str, "username": str}
 user_locations = {}    # user_id -> "local" | server_id
 pending_auth = {}      # websocket -> {"username": str, "nonce": bytes}
-remote_users = {}      # user_id -> {"server_id": ..., "username": ..., "pubkey": ...}
 seen_ids = set()      
 
 server_id = None  # assigned after SERVER_WELCOME
@@ -180,6 +179,61 @@ async def handle_auth_hello(ws, env):
     }
     await sign_and_send(ws, resp)
 
+# async def handle_auth_response(ws, env):
+#     if ws not in pending_auth:
+#         await send_error(ws, "INVALID_SIG", "No pending challenge")
+#         return
+
+#     username = pending_auth[ws]["username"]
+#     nonce = pending_auth[ws]["nonce"]
+#     proof_hex = env["payload"].get("proof_hmac_hex")
+#     pubkey = env["payload"].get("pubkey")
+#     user_id_claim = env.get("from")
+
+#     user_record = db["users"][username]
+#     key = bytes.fromhex(user_record["pwd_hash"])
+#     expected = hmac.new(key, nonce, hashlib.sha256).hexdigest()
+#     if not hmac.compare_digest(proof_hex, expected):
+#         await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
+#         return
+
+#     user_id = user_record["user_id"]
+#     local_users[user_id] = {"ws": ws, "pubkey": pubkey or user_record["pubkey"], "username": username}
+#     user_locations[user_id] = "local"
+
+#     # broadcast presence gossip
+#     advertise_payload = {
+#         "user_id": user_id,
+#         "server_id": server_id,
+#         "meta": {"username": username, "pubkey": user_record["pubkey"]}
+#     }
+#     advertise = {
+#         "type": "USER_ADVERTISE",
+#         "from": server_id,
+#         "to": "*",
+#         "ts": now_ms(),
+#         "payload": advertise_payload,
+#         "sig": ""
+#     }
+#     await broadcast(advertise)
+#     for sid, ws2 in servers.items():
+#         try:
+#             await sign_and_send(ws2, advertise)
+#         except Exception:
+#             pass
+
+#     ok = {
+#         "type": "AUTH_OK",
+#         "from": "server",
+#         "to": user_id,
+#         "ts": now_ms(),
+#         "payload": {"user_id": user_id},
+#         "sig": ""
+#     }
+#     await sign_and_send(ws, ok)
+#     pending_auth.pop(ws, None)
+#     print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
+
 async def handle_auth_response(ws, env):
     if ws not in pending_auth:
         await send_error(ws, "INVALID_SIG", "No pending challenge")
@@ -229,29 +283,6 @@ async def handle_auth_response(ws, env):
             "sig": ""
         }
         await sign_and_send(ws, advertise_existing)
-        
-    # 1b. 告诉新用户：已有的远端用户
-    for uid, info in remote_users.items():
-        print(remote_users)
-        if uid == user_id:
-            continue
-        advertise_remote = {
-            "type": "USER_ADVERTISE",
-            "from": info["server_id"],
-            "to": user_id,
-            "ts": now,
-            "payload": {
-                "user_id": uid,
-                "server_id": info["server_id"],
-                "meta": {
-                    "username": info.get("username"),
-                    "pubkey": info.get("pubkey"),
-                }
-            },
-            "sig": ""
-        }
-        await sign_and_send(ws, advertise_remote)
-
 
     # 2. 告诉所有旧用户：新用户上线
     advertise_new = {
@@ -275,7 +306,6 @@ async def handle_auth_response(ws, env):
             await sign_and_send(ws2, advertise_new)
         except Exception:
             pass
-        
 
     # 3. 返回 AUTH_OK 给新用户
     ok = {
@@ -295,6 +325,39 @@ async def handle_auth_response(ws, env):
 # -------------------------
 # MESSAGE ROUTING
 # -------------------------
+# async def handle_msg_direct(env):
+#     from_user = env["from"]
+#     to_user = env["to"]
+#     if user_locations.get(to_user) == "local":
+#         deliver = {
+#             "type": "USER_DELIVER",
+#             "from": server_id,
+#             "to": to_user,
+#             "ts": env["ts"],
+#             "payload": env["payload"],
+#             "sig": ""
+#         }
+#         await sign_and_send(local_users[to_user]["ws"], deliver)
+#     else:
+#         # send SERVER_DELIVER
+#         dest = user_locations.get(to_user)
+#         if dest and dest in servers:
+#             forward = {
+#                 "type": "SERVER_DELIVER",
+#                 "from": server_id,
+#                 "to": dest,
+#                 "ts": now_ms(),
+#                 "payload": {
+#                     "user_id": to_user,
+#                     **env["payload"],
+#                     "user_ts": env["ts"]
+#                 },
+#                 "sig": ""
+#             }
+#             await sign_and_send(servers[dest], forward)
+#         else:
+#             print(f"❌ USER_NOT_FOUND {to_user}")
+
 async def handle_msg_direct(env):
     from_user = env["from"]
     to_user = env["to"]
@@ -319,19 +382,6 @@ async def handle_msg_direct(env):
         dest = user_locations.get(to_user)
         if dest and dest in servers:
             if env["type"] == "MSG_DIRECT":
-                # forward = {
-                #     "type": "SERVER_DELIVER",
-                #     "from": server_id,
-                #     "to": dest,
-                #     "ts": now_ms(),
-                #     "payload": {
-                #         "user_id": to_user,
-                #         **env["payload"],
-                #         "user_ts": env["ts"]
-                #     },
-                #     "sig": ""
-                # }
-                # When forwarding to another server
                 forward = {
                     "type": "SERVER_DELIVER",
                     "from": server_id,
@@ -339,10 +389,8 @@ async def handle_msg_direct(env):
                     "ts": now_ms(),
                     "payload": {
                         "user_id": to_user,
-                        "ciphertext": env["payload"]["ciphertext"],
-                        "sender": from_user,
-                        "sender_pub": env["payload"]["sender_pub"],
-                        "content_sig": env["payload"]["content_sig"],
+                        **env["payload"],
+                        "user_ts": env["ts"]
                     },
                     "sig": ""
                 }
@@ -491,19 +539,9 @@ async def handle_user_advertise(envelope):
     payload = envelope["payload"]
     user_id = payload["user_id"]
     src_server = payload["server_id"]
-    meta = payload.get("meta", {})
-    
-    user_locations[user_id] = src_server
 
-    if src_server != "local":
-        remote_users[user_id] = {
-            "server_id": src_server,
-            "username": meta.get("username"),
-            "pubkey": meta.get("pubkey"),
-        }
-        
+    user_locations[user_id] = src_server
     print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
-    await broadcast(envelope)
 
     # Gossip forward to other servers (except origin if we have a direct link to it)
     for sid, ws in servers.items():
@@ -551,37 +589,6 @@ async def handle_user_remove(envelope):
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
-            
-async def handle_server_deliver(env):
-    payload = env["payload"]
-    target_user = payload.get("user_id")
-
-    # 目标在本地 → 转成本地 USER_DELIVER
-    if user_locations.get(target_user) == "local":
-        deliver = {
-            "type": "USER_DELIVER",
-            "from": env["from"],  # 来源 server_id
-            "to": target_user,
-            "ts": env["ts"],
-            "payload": {
-                "ciphertext": payload.get("ciphertext"),
-                "sender": payload.get("sender"),
-                "sender_pub": payload.get("sender_pub"),
-                "content_sig": payload.get("content_sig"),
-            },
-            "sig": ""  # 可加 transport 签名
-        }
-        await sign_and_send(local_users[target_user]["ws"], deliver)
-
-    # 目标在其他 server → 继续转发
-    else:
-        dest = user_locations.get(target_user)
-        if dest and dest in servers:
-            await sign_and_send(servers[dest], env)
-        else:
-            print(f"❌ SERVER_DELIVER: user {target_user} not found")
-
-
             
 # -------------------------
 # INTRODUCER CONNECTION
@@ -655,9 +662,9 @@ async def handle_client(ws):
 
             elif mtype == "USER_REMOVE":
                 await handle_user_remove(env)
-                
-            elif mtype == "SERVER_DELIVER":
-                await handle_server_deliver(env)
+
+            # elif mtype == "SERVER_DELIVER":
+            #     await handle_server_deliver(env)
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")
@@ -680,6 +687,7 @@ async def handle_client(ws):
                 "payload": {"user_id": drop_uid, "server_id": server_id},
                 "sig": ""
             }
+            print(f"👋 User {drop_uid} discounected.")
             await broadcast(rm)
 
 # -------------------------

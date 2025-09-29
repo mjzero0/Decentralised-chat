@@ -254,8 +254,6 @@ if __name__ == "__main__":
     decrypted = rsa_oaep_decrypt(recipient_priv, b64u_decode(env["payload"]["ciphertext"]))
     print("plaintext:", decrypted.decode("utf-8"))
 
-
-
   
 # password hashing
 def hash_password(password: str, salt: bytes = None) -> str:
