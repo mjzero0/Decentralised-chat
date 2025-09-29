@@ -18,12 +18,12 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "192.168.0.219"
+INTRODUCER_HOST = "10.13.101.11"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
 # Bind to all interfaces by default so teammates can connect over LAN.
-MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
+MY_HOST = os.getenv("MY_HOST", "10.13.101.11")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # ---------- In-memory tables ----------
@@ -157,7 +157,7 @@ async def handle_user_deliver(from_user, to_user, payload):
         "content_sig": payload["content_sig"],
     }
     env = make_signed_envelope("USER_DELIVER", server_id, to_user, user_payload, server_priv)
-    await local_users[to_user].send(json.dumps(env))
+    await local_users[to_user]["ws"].send(json.dumps(env))
     print(f"✅ USER_DELIVER sent to {to_user}")
 
 def make_server_deliver(envelope: dict, to_server: str):
@@ -301,7 +301,8 @@ async def handle_server_announce(envelope: dict):
     sig = envelope.get("sig")
     if from_id in server_pubkeys:
         pubkey = server_pubkeys[from_id]
-        if not verify_transport_sig(pubkey, envelope["payload"], sig):
+        # if not verify_transport_sig(pubkey, envelope["payload"], sig):
+        if not verify_transport_sig(envelope, pubkey):
             print(f"❌ Invalid signature on SERVER_ANNOUNCE from {from_id}")
             return
 
