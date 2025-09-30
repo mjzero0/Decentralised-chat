@@ -132,3 +132,14 @@ async def handle_user_hello(websocket, env):
                 "sender_pub": envelope["payload"]["sender_pub"],
                 "content_sig": envelope["payload"]["content_sig"]
             }
+
+# async def broadcast_user_remove(user_id: str, _server_id: str):
+#     payload = {"user_id": user_id, "server_id": _server_id}
+#     envelope = make_signed_envelope("USER_REMOVE", _server_id, "*", payload, SERVER_PRIVKEY)
+#     print(f"📤 Broadcasting USER_REMOVE for {user_id}")
+
+#     for sid, ws in servers.items():
+#         try:
+#             await ws.send(json.dumps(envelope))
+#         except Exception as e:
+#             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")

@@ -344,12 +344,14 @@ async def connect_to_other_server(host, port, _server_id):
         servers[_server_id] = ws # connect to the new server
         print(f"🔗 Connected to server {_server_id} at {uri}")
         
-        await ws.send(to_json(await make_server_hello_link(_server_id)))
+        # await ws.send(to_json(await make_server_hello_link(_server_id)))
+        await sign_and_send(ws, await make_server_hello_link(_server_id))
         print(f"✅ Send SERVER_HELLO_LINK to server id: {_server_id}.")
 
         if server_id:
             announce = await make_server_announce(_server_id, MY_HOST, MY_PORT, SERVER_PUB_B64U)
-            await ws.send(to_json(announce))
+            # await ws.send(to_json(announce))
+            await sign_and_send(ws, announce)
             print(f"📣 Sent SERVER_ANNOUNCE for {server_id} ({MY_HOST}:{MY_PORT})")
 
     except Exception as e:
@@ -477,6 +479,7 @@ async def handle_user_advertise(envelope):
 
     # If this came from another server and we know its key, verify it
     sender = envelope.get("from")
+    
     if sender in server_pubkeys:
         if not verify_transport_sig(envelope, server_pubkeys[sender]):
             print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
@@ -486,31 +489,21 @@ async def handle_user_advertise(envelope):
     user_id = payload["user_id"]
     src_server = payload["server_id"]
 
-    user_locations[user_id] = src_server
-    print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
-    
-    await broadcast(envelope)
+    if sender != server_id:
+        user_locations[user_id] = src_server
+        print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
+        await broadcast(envelope)
 
     # Gossip forward to other servers (except origin if we have a direct link to it)
     for sid, ws in servers.items():
         if sid == server_id:
             continue
         try:
-            await ws.send(json.dumps(envelope))
+            # await ws.send(json.dumps(envelope))
+            await sign_and_send(ws, envelope)
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
-            
-# async def broadcast_user_remove(user_id: str, _server_id: str):
-#     payload = {"user_id": user_id, "server_id": _server_id}
-#     envelope = make_signed_envelope("USER_REMOVE", _server_id, "*", payload, SERVER_PRIVKEY)
-#     print(f"📤 Broadcasting USER_REMOVE for {user_id}")
 
-#     for sid, ws in servers.items():
-#         try:
-#             await ws.send(json.dumps(envelope))
-#         except Exception as e:
-#             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
-            
 async def handle_user_remove(envelope):
     if dedup_or_remember(envelope):
         return
@@ -536,7 +529,8 @@ async def handle_user_remove(envelope):
         if sid == server_id:
             continue
         try:
-            await ws.send(json.dumps(envelope))
+            # await ws.send(json.dumps(envelope))
+            await sign_and_send(ws, envelope)
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
             
