@@ -23,7 +23,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = "172.30.80.1"  # adjust to your server IP
+SERVER_HOST = "172.26.126.178"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password

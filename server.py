@@ -22,11 +22,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "172.30.80.1"
+INTRODUCER_HOST = "172.26.126.178"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "172.30.80.1")
+MY_HOST = os.getenv("MY_HOST", "172.26.126.178")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
