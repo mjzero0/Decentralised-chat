@@ -348,8 +348,8 @@ async def connect_to_other_server(host, port, _server_id):
 
         if server_id:
             announce = await make_server_announce(_server_id, MY_HOST, MY_PORT, SERVER_PUB_B64U)
-            # await ws.send(to_json(announce))
-            await sign_and_send(ws, announce)
+            await ws.send(to_json(announce))
+            # await sign_and_send(ws, announce)
             print(f"📣 Sent SERVER_ANNOUNCE for {server_id} ({MY_HOST}:{MY_PORT})")
 
     except Exception as e:
@@ -544,23 +544,50 @@ async def handle_user_remove(envelope):
 
     payload = envelope["payload"]
     user_id = payload["user_id"]
-    target_server = payload["server_id"]
-
-    if user_locations.get(user_id) == target_server:
-        del user_locations[user_id]
-        print(f"🗑️ Removed {user_id} from user_locations")
-    else:
-        print(f"⚠️ Skipped removal of {user_id}: mismatch server_id")
+    
+    user_locations.pop(user_id, None)
+    print(f"🗑️ Removed {user_id} from user_locations")
+    rm = {
+        "type": "USER_REMOVE",
+        "from": server_id,
+        "to": "*",
+        "ts": now_ms(),
+        "payload": {"user_id": user_id, "server_id": server_id},
+        "sig": ""
+    }
+    print(f"👋 User {user_id} discounected.")
+    
+    await broadcast(rm)
 
     # Gossip forward
     for sid, ws in servers.items():
-        if sid == server_id:
+        if sid == server_id or sid == sender:
             continue
         try:
             # await ws.send(json.dumps(envelope))
             await sign_and_send(ws, envelope)
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
+            
+async def broadcast_user_remove(user_id: str):
+    payload = {"user_id": user_id, "server_id": server_id}
+    envelope = {
+                "type": "USER_REMOVE",
+                "from": server_id,
+                "to": "*",
+                "ts": now_ms(),
+                "payload": payload,
+                "sig": ""
+            }
+    print(f"📤 Broadcasting USER_REMOVE for {user_id}")
+
+    for sid, ws in servers.items():
+        if sid == server_id:
+            continue
+        try:
+            await sign_and_send(ws, envelope)
+        except Exception as e:
+            print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
 # -------------------------
 # INTRODUCER CONNECTION
@@ -663,6 +690,7 @@ async def handle_client(ws):
             }
             print(f"👋 User {drop_uid} discounected.")
             await broadcast(rm)
+            await broadcast_user_remove(drop_uid)
 
 # -------------------------
 # MAIN

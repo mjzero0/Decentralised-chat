@@ -143,3 +143,33 @@
 # #             await ws.send(json.dumps(envelope))
 # #         except Exception as e:
 # #             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
+
+# async def handle_user_remove(envelope):
+#     if dedup_or_remember(envelope):
+#         return
+
+#     sender = envelope.get("from")
+#     if sender in server_pubkeys:
+#         if not verify_transport_sig(envelope, server_pubkeys[sender]):
+#             print(f"❌ Invalid signature on USER_REMOVE from {sender}")
+#             return
+
+#     payload = envelope["payload"]
+#     user_id = payload["user_id"]
+#     target_server = payload["server_id"]
+
+#     if user_locations.get(user_id) == target_server:
+#         del user_locations[user_id]
+#         print(f"🗑️ Removed {user_id} from user_locations")
+#     else:
+#         print(f"⚠️ Skipped removal of {user_id}: mismatch server_id")
+
+#     # Gossip forward
+#     for sid, ws in servers.items():
+#         if sid == server_id:
+#             continue
+#         try:
+#             # await ws.send(json.dumps(envelope))
+#             await sign_and_send(ws, envelope)
+#         except Exception as e:
+#             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
