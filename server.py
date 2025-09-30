@@ -296,10 +296,8 @@ async def handle_msg_direct(env):
 
     else:
         # get connected server id - dest
-        print("not local users!!!")
         dest = user_locations.get(to_user)
         if dest and dest in servers:
-            print("direct msg!!!")
             forward = {
                 "type": "SERVER_DELIVER",
                 "from": server_id,
@@ -439,7 +437,6 @@ async def handle_server_announce(envelope: dict):
 async def handle_server_deliver(envelope):
     # Forward to the server where the recipient lives (or deliver locally)
     target_user = envelope["payload"]["user_id"]
-    print("yesyesyes")
     
     if target_user not in local_users:
         print(f"❌ User {target_user} does not connect to this server.")
@@ -465,7 +462,7 @@ async def handle_server_deliver(envelope):
                 "payload": envelope["payload"],
                 "sig": ""
             }
-        print(f"deliver: {deliver["type"]}")
+        # print(f"deliver: {deliver["type"]}")
         if deliver:
             await sign_and_send(local_users[target_user]["ws"], deliver)
 
@@ -480,6 +477,11 @@ async def handle_user_advertise(envelope):
     # If this came from another server and we know its key, verify it
     sender = envelope.get("from")
     
+    to_someone = envelope.get("to")
+    # receieve the USER_ADVERTISE that needs to be send to one of my user
+    if to_someone in user_locations and to_someone in local_users:
+        await sign_and_send(local_users[to_someone]["ws"], envelope)
+    
     if sender in server_pubkeys:
         if not verify_transport_sig(envelope, server_pubkeys[sender]):
             print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
@@ -488,6 +490,11 @@ async def handle_user_advertise(envelope):
     payload = envelope["payload"]
     user_id = payload["user_id"]
     src_server = payload["server_id"]
+    
+    # This indicates a special reissue. Once processed, it will be sent to the local user.
+    # No longer gossip to other servers
+    if payload.get("origin") == "backfill":
+        return
 
     # receive new user advertise from other server
     if sender != server_id:
@@ -508,7 +515,8 @@ async def handle_user_advertise(envelope):
                     "meta": {
                         "username": info.get("username"),
                         "pubkey": info.get("pubkey")
-                    }
+                    },
+                    "origin": "backfill" 
                 },
                 "sig": ""
             }
