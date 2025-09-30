@@ -355,6 +355,17 @@ async def connect_to_other_server(host, port, _server_id):
         print(f"❌ Failed to connect to {_server_id}: {e}")
 
 async def handle_server_welcome(envelope: dict):
+
+    async def handle_server_welcome(envelope: dict):
+        introducer_id = envelope["from"]
+        pubkey = envelope["payload"].get("pubkey")
+
+        if pubkey:
+            ok = verify_transport_sig(envelope, pubkey)
+            if not ok:
+                print("❌ Invalid signature on SERVER_WELCOME")
+                return
+
     payload = envelope["payload"]
     global server_id
     server_id = payload["assigned_id"]
@@ -390,19 +401,20 @@ async def make_server_announce(to_id: str, host: str, port: int, pubkey_b64u: st
         SERVER_PRIVKEY,
     )
 
-async def make_server_hello_link(to_sid: str) -> dict:
+async def make_server_hello_join() -> dict:
+    tmp_id = str(uuid.uuid4())
+    payload = {"host": MY_HOST, "port": MY_PORT, "pubkey": SERVER_PUB_B64U}
+    sig = sign_transport_payload(SERVER_PRIVKEY, payload)
     return {
-        "type": "SERVER_HELLO_LINK",
-        "from": server_id,
-        "to": to_sid,
-        "ts": int(time.time() * 1000),
-        "payload": {
-            "host": MY_HOST,
-            "port": MY_PORT,
-            "pubkey": SERVER_PUB_B64U,
-        },
-        "sig": ""  # TODO: SIGN
+        "type": "SERVER_HELLO_JOIN",
+        "from": tmp_id,
+        "to": f"{INTRODUCER_HOST}:{INTRODUCER_PORT}",  # IP:port allowed here
+        "ts": now_ms(),
+        "payload": payload,
+        "sig": sig,
     }
+
+
 
 
 async def handle_server_announce(envelope: dict):
@@ -509,14 +521,18 @@ async def handle_user_remove(envelope):
             
 async def make_server_hello_join() -> dict:
     tmp_id = str(uuid.uuid4())
+    payload = {"host": MY_HOST, "port": MY_PORT, "pubkey": SERVER_PUB_B64U}
+    sig = sign_transport_payload(SERVER_PRIVKEY, payload)
     return {
         "type": "SERVER_HELLO_JOIN",
         "from": tmp_id,
-        "to": f"{INTRODUCER_HOST}:{INTRODUCER_PORT}",
+        "to": f"{INTRODUCER_HOST}:{INTRODUCER_PORT}",  # IP:port is valid for JOIN
         "ts": now_ms(),
-        "payload": {"host": MY_HOST, "port": MY_PORT, "pubkey": SERVER_PUB_B64U},
-        "sig": ""
+        "payload": payload,
+        "sig": sig,
     }
+
+
 
 async def join_network():
     try:
@@ -562,11 +578,22 @@ async def handle_client(ws):
                 sid = env["from"]
                 payload = env["payload"]
                 host, port = payload["host"], payload["port"]
+                pubkey = payload.get("pubkey")
+
+                # verify signature if we can
+                if pubkey:
+                    ok = verify_transport_sig(env, pubkey)
+                    if not ok:
+                        print(f"❌ Invalid signature on SERVER_HELLO_LINK from {sid}")
+                        continue
+
                 servers[sid] = ws
                 server_addrs[sid] = (host, port)
-                server_pubkeys[sid] = payload["pubkey"]
+                if pubkey:
+                    server_pubkeys[sid] = pubkey
                 print(f"🔗 Registered server {sid} via SERVER_HELLO_LINK")
 
+                
             elif mtype == "SERVER_ANNOUNCE":
                 await handle_server_announce(env)
 
