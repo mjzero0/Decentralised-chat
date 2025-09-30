@@ -489,14 +489,34 @@ async def handle_user_advertise(envelope):
     user_id = payload["user_id"]
     src_server = payload["server_id"]
 
+    # receive new user advertise from other server
     if sender != server_id:
         user_locations[user_id] = src_server
         print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
         await broadcast(envelope)
+        # need to send all local users info to the new user
+        for uid, info in list(local_users.items()):
+            advertise_existing = {
+                "type": "USER_ADVERTISE",
+                "from": server_id,
+                # user_id is the new user from the other server
+                "to": user_id,
+                "ts": now_ms(),
+                "payload": {
+                    "user_id": uid,
+                    "server_id": server_id,
+                    "meta": {
+                        "username": info.get("username"),
+                        "pubkey": info.get("pubkey")
+                    }
+                },
+                "sig": ""
+            }
+            await sign_and_send(servers[src_server], advertise_existing)
 
     # Gossip forward to other servers (except origin if we have a direct link to it)
     for sid, ws in servers.items():
-        if sid == server_id:
+        if sid == server_id or sid == sender:
             continue
         try:
             # await ws.send(json.dumps(envelope))
