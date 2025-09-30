@@ -22,11 +22,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.101.11"
+INTRODUCER_HOST = "192.168.0.219"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.101.11")
+MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -72,6 +72,12 @@ local_users = {}       # user_id -> {"ws": websocket, "pubkey": str, "username":
 user_locations = {}    # user_id -> "local" | server_id
 pending_auth = {}      # websocket -> {"username": str, "nonce": bytes}
 seen_ids = set()      
+
+# -------------------------
+# PUBLIC CHANNEL
+# -------------------------
+public_channel_members = set()   # 所有在 public channel 的用户
+public_channel_version = 0       # 每次更新递增
 
 server_id = None  # assigned after SERVER_WELCOME
 
@@ -123,6 +129,22 @@ async def broadcast(msg):
             dead.append(uid)
     for uid in dead:
         local_users.pop(uid, None)
+        
+async def gossip_servers(msg, exclude: set[str] | None = None):
+    exclude = exclude or set()
+    dead = []
+    for sid, ws in servers.items():
+        if sid in exclude or sid == server_id:
+            continue
+        try:
+            await sign_and_send(ws, msg)
+        except Exception:
+            dead.append(sid)
+    for sid in dead:
+        servers.pop(sid, None)
+        server_addrs.pop(sid, None)
+        server_pubkeys.pop(sid, None)
+
 
 # -------------------------
 # USER REGISTER / LOGIN
@@ -267,6 +289,37 @@ async def handle_auth_response(ws, env):
 
     pending_auth.pop(ws, None)
     print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
+    
+    # --- 加入 public channel ---
+    global public_channel_version
+    public_channel_members.add(user_id)
+    public_channel_version += 1
+
+    msg_add = {
+        "type": "PUBLIC_CHANNEL_ADD",
+        "from": server_id,
+        "to": "*",
+        "ts": now_ms(),
+        "payload": {"add": [user_id], "if_version": public_channel_version},
+        "sig": ""
+    }
+    await gossip_servers(msg_add)  
+
+    msg_updated = {
+        "type": "PUBLIC_CHANNEL_UPDATED",
+        "from": server_id,
+        "to": "*",
+        "ts": now_ms(),
+        "payload": {
+            "version": public_channel_version,
+            "wraps": [
+                {"member_id": uid, "wrapped_key": "fake_key_for_demo"}
+                for uid in public_channel_members
+            ]
+        },
+        "sig": ""
+    }
+    await gossip_servers(msg_updated) 
 
 # -------------------------
 # MESSAGE ROUTING
@@ -447,6 +500,15 @@ async def handle_server_deliver(envelope):
                 "payload": envelope["payload"],
                 "sig": ""
             }
+        elif envelope["payload"]["inner_type"] == "MSG_PUBLIC_CHANNEL":
+            deliver = {
+                "type": "USER_DELIVER",
+                "from": server_id,
+                "to": target_user,
+                "ts": envelope["ts"],
+                "payload": envelope["payload"],
+                "sig": ""
+            }
         else:
             # FILE_START / FILE_CHUNK / FILE_END
             deliver = {
@@ -582,6 +644,48 @@ async def broadcast_user_remove(user_id: str):
             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
 # -------------------------
+# PUBLIC CHANNEL HANDLER
+# -------------------------
+async def handle_msg_public_channel(env):
+    sender_id = env["from"]
+    # 1. 发给本 server 的所有本地用户（除了自己）
+    for uid, info in local_users.items():
+        if uid == sender_id:
+            continue
+        deliver = {
+            "type": "USER_DELIVER",
+            "from": server_id,
+            "to": uid,
+            "ts": env["ts"],
+            "payload": env["payload"],
+            "sig": ""
+        }
+        await sign_and_send(info["ws"], deliver)
+
+    # 2. 转发给其他 server
+    for sid, ws in servers.items():
+        if sid == server_id:
+            continue
+        for target_uid, loc in user_locations.items():
+            if loc == sid and target_uid != sender_id:
+                forward = {
+                    "type": "SERVER_DELIVER",
+                    "from": server_id,
+                    "to": sid,
+                    "ts": env["ts"],
+                    "payload": {
+                        "inner_type": "MSG_PUBLIC_CHANNEL",
+                        "user_id": target_uid,   # must have
+                        "ciphertext": env["payload"]["ciphertext"],
+                        "sender": sender_id,
+                        "sender_pub": env["payload"]["sender_pub"],
+                        "content_sig": env["payload"]["content_sig"]
+                    },
+                    "sig": ""
+                }
+                await sign_and_send(ws, forward)
+            
+# -------------------------
 # INTRODUCER CONNECTION
 # -------------------------
 async def make_server_hello_join() -> dict:
@@ -662,6 +766,26 @@ async def handle_client(ws):
 
             elif mtype == "SERVER_DELIVER":
                 await handle_server_deliver(env)
+                
+            elif mtype == "PUBLIC_CHANNEL_ADD":
+                # Update local public member views to avoid KeyError
+                adds = env.get("payload", {}).get("add", [])
+                for u in adds:
+                    public_channel_members.add(u)
+
+            elif mtype == "PUBLIC_CHANNEL_UPDATED":
+                # Receive the version number, record it first; wrap it and wait for you to do KEY_SHARE before using it
+                pv = env.get("payload", {}).get("version")
+                if isinstance(pv, int):
+                    global public_channel_version
+                    public_channel_version = max(public_channel_version, pv)
+
+            elif mtype == "PUBLIC_CHANNEL_KEY_SHARE":
+                # did not achieve for now
+                pass
+                
+            # elif mtype == "MSG_PUBLIC_CHANNEL":
+            #     await handle_msg_public_channel(env)
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")

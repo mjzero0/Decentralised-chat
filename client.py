@@ -23,8 +23,8 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = "10.13.101.11"  # adjust to your server IP
-SERVER_PORT = 9001
+SERVER_HOST = "192.168.0.219"  # adjust to your server IP
+SERVER_PORT = 9002
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
 USER_ID_FILE = "user_id.txt"
@@ -208,12 +208,12 @@ async def login():
                         message = " ".join(msg_parts).encode("utf-8")
 
                         if target_name not in known_users:
-                            print(f"⚠️ Don’t know user {target_name}")
+                            print(f"⚠️ Don't know user {target_name}")
                             continue
                         target_id = known_users[target_name]["uuid"]
                         recip_pub_b64u = known_users[target_name]["pubkey"]
                         if not recip_pub_b64u:
-                            print(f"⚠️ Don’t know pubkey for {target_id}")
+                            print(f"⚠️ Don't know pubkey for {target_id}")
                             continue
                         recip_pub = load_public_key_b64u(recip_pub_b64u)
 
@@ -224,9 +224,8 @@ async def login():
                         content_sig = make_dm_content_sig(priv, ciphertext_b64u, user_id, target_id, ts)
 
                         payload = {
+                            "public": False,
                             "ciphertext": ciphertext_b64u,
-                            # TODO: "sender" is not in the v1.3 protocol, but this design makes USER_DELIVER and  
-                            # SERVER_DELIVER easier - delete or not?
                             "sender": user_id,
                             "sender_pub": pub_b64u,
                             "content_sig": content_sig
@@ -243,6 +242,49 @@ async def login():
                         print(f"📤 Sent DM to {target_name}: {message.decode()}")
                     except Exception as e:
                         print(f"❌ Failed to send DM: {e}")
+                
+                # Public channel
+                elif cmd.startswith("/all "):
+                    text = cmd[5:]
+                    if not text.strip():
+                        print("⚠️ Empty message")
+                        continue
+                    try:
+                        for name, rec in list(known_users.items()):
+                            target_id = rec["uuid"]
+                            recip_pub_b64u = rec["pubkey"]
+                            if not recip_pub_b64u or target_id == user_id:
+                                continue
+                            recip_pub = load_public_key_b64u(recip_pub_b64u)
+
+                            message = text.encode("utf-8")
+                            ciphertext = rsa_oaep_encrypt(recip_pub, message)
+                            ciphertext_b64u = b64u(ciphertext)
+
+                            ts = now_ms()
+                            content_sig = make_dm_content_sig(
+                                priv, ciphertext_b64u, user_id, target_id, ts
+                            )
+
+                            payload = {
+                                "public": True,
+                                "ciphertext": ciphertext_b64u,
+                                "sender": user_id,
+                                "sender_pub": pub_b64u,
+                                "content_sig": content_sig
+                            }
+                            env = {
+                                "type": "MSG_DIRECT",
+                                "from": user_id,
+                                "to": target_id,
+                                "ts": ts,
+                                "payload": payload,
+                                "sig": ""
+                            }
+                            await ws.send(json.dumps(env))
+                        print(f"📢 /all sent to {len(known_users)} users (self excluded)")
+                    except Exception as e:
+                        print(f"❌ Failed to send /all: {e}")
 
                 # List known users
                 elif cmd == "/list":
@@ -253,12 +295,12 @@ async def login():
                     try:
                         _, target_name, path = cmd.split(" ", 2)
                         if target_name not in known_users:
-                            print(f"⚠️ Don’t know user {target_name}")
+                            print(f"⚠️ Don't know user {target_name}")
                             continue
                         target_id = known_users[target_name]["uuid"]
                         recip_pub_b64u = known_users[target_name]["pubkey"]
                         if not recip_pub_b64u:
-                            print(f"⚠️ Don’t know pubkey for {target_id}")
+                            print(f"⚠️ Don't know pubkey for {target_id}")
                             continue
                         recip_pub = load_public_key_b64u(recip_pub_b64u)
 
@@ -353,8 +395,10 @@ async def login():
                     elif mtype == "USER_DELIVER":
                         payload = env["payload"]
                         # DM or file chunk (both carry ciphertext)
-                        if "file_id" not in payload:
-                            # Plain DM
+                        if "file_id" in payload:
+                            pass
+                        elif "ciphertext" in payload and "sender_pub" in payload and "content_sig" in payload:
+                            # Plain DM or public message
                             try:
                                 ciphertext = b64u_decode_str(payload["ciphertext"])
                                 plaintext = rsa_oaep_decrypt(priv, ciphertext).decode("utf-8")
@@ -369,7 +413,10 @@ async def login():
                                 sender_uuid = payload.get("sender")
                                 sender_name = uuid_lookup.get(sender_uuid, sender_uuid[:8])
                                 if ok:
-                                    print(f"\n💬 DM from {sender_name}: {plaintext}")
+                                    if env.get("to") == "public":
+                                        print(f"\n📢 Public from {sender_name}: {plaintext}")
+                                    else:
+                                        print(f"\n💬 DM from {sender_name}: {plaintext}")
                                 else:
                                     print(f"\n⚠️ DM signature invalid from {sender_name}.")
                             except Exception as e:
