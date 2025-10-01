@@ -76,8 +76,8 @@ seen_ids = set()
 # -------------------------
 # PUBLIC CHANNEL
 # -------------------------
-public_channel_members = set()   # 所有在 public channel 的用户
-public_channel_version = 0       # 每次更新递增
+public_channel_members = set()   # All users in the public channel
+public_channel_version = 0       # Incremented with each update
 
 server_id = None  # assigned after SERVER_WELCOME
 
@@ -144,7 +144,6 @@ async def gossip_servers(msg, exclude: set[str] | None = None):
         servers.pop(sid, None)
         server_addrs.pop(sid, None)
         server_pubkeys.pop(sid, None)
-
 
 # -------------------------
 # USER REGISTER / LOGIN
@@ -290,7 +289,7 @@ async def handle_auth_response(ws, env):
     pending_auth.pop(ws, None)
     print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
     
-    # --- 加入 public channel ---
+    # --- join public channel ---
     global public_channel_version
     public_channel_members.add(user_id)
     public_channel_version += 1
@@ -500,15 +499,6 @@ async def handle_server_deliver(envelope):
                 "payload": envelope["payload"],
                 "sig": ""
             }
-        elif envelope["payload"]["inner_type"] == "MSG_PUBLIC_CHANNEL":
-            deliver = {
-                "type": "USER_DELIVER",
-                "from": server_id,
-                "to": target_user,
-                "ts": envelope["ts"],
-                "payload": envelope["payload"],
-                "sig": ""
-            }
         else:
             # FILE_START / FILE_CHUNK / FILE_END
             deliver = {
@@ -644,48 +634,6 @@ async def broadcast_user_remove(user_id: str):
             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
 # -------------------------
-# PUBLIC CHANNEL HANDLER
-# -------------------------
-async def handle_msg_public_channel(env):
-    sender_id = env["from"]
-    # 1. 发给本 server 的所有本地用户（除了自己）
-    for uid, info in local_users.items():
-        if uid == sender_id:
-            continue
-        deliver = {
-            "type": "USER_DELIVER",
-            "from": server_id,
-            "to": uid,
-            "ts": env["ts"],
-            "payload": env["payload"],
-            "sig": ""
-        }
-        await sign_and_send(info["ws"], deliver)
-
-    # 2. 转发给其他 server
-    for sid, ws in servers.items():
-        if sid == server_id:
-            continue
-        for target_uid, loc in user_locations.items():
-            if loc == sid and target_uid != sender_id:
-                forward = {
-                    "type": "SERVER_DELIVER",
-                    "from": server_id,
-                    "to": sid,
-                    "ts": env["ts"],
-                    "payload": {
-                        "inner_type": "MSG_PUBLIC_CHANNEL",
-                        "user_id": target_uid,   # must have
-                        "ciphertext": env["payload"]["ciphertext"],
-                        "sender": sender_id,
-                        "sender_pub": env["payload"]["sender_pub"],
-                        "content_sig": env["payload"]["content_sig"]
-                    },
-                    "sig": ""
-                }
-                await sign_and_send(ws, forward)
-            
-# -------------------------
 # INTRODUCER CONNECTION
 # -------------------------
 async def make_server_hello_join() -> dict:
@@ -780,12 +728,9 @@ async def handle_client(ws):
                     global public_channel_version
                     public_channel_version = max(public_channel_version, pv)
 
-            elif mtype == "PUBLIC_CHANNEL_KEY_SHARE":
-                # did not achieve for now
-                pass
-                
-            # elif mtype == "MSG_PUBLIC_CHANNEL":
-            #     await handle_msg_public_channel(env)
+            # elif mtype == "PUBLIC_CHANNEL_KEY_SHARE":
+            #     # have not achieved yet for now
+            #     pass
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")

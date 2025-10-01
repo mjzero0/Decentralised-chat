@@ -394,6 +394,7 @@ async def login():
 
                     elif mtype == "USER_DELIVER":
                         payload = env["payload"]
+                        public = payload["public"]
                         # DM or file chunk (both carry ciphertext)
                         if "file_id" in payload:
                             pass
@@ -413,7 +414,7 @@ async def login():
                                 sender_uuid = payload.get("sender")
                                 sender_name = uuid_lookup.get(sender_uuid, sender_uuid[:8])
                                 if ok:
-                                    if env.get("to") == "public":
+                                    if public:
                                         print(f"\n📢 Public from {sender_name}: {plaintext}")
                                     else:
                                         print(f"\n💬 DM from {sender_name}: {plaintext}")
