@@ -2,12 +2,8 @@ import asyncio
 import websockets
 import json
 import time
-import base64
 import uuid
-
-# Dummy RSA pubkey
-FAKE_PUBKEY = base64.urlsafe_b64encode(b"fake-rsa-pubkey").decode().rstrip("=")
-
+    
 def now_ms():
     return int(time.time() * 1000)
 
@@ -68,7 +64,7 @@ async def handle_join(websocket):
 
 
 async def start_server():
-    print("🌐 Fake Introducer running on ws://localhost:8765")
+    print("🌐 Introducer running on ws://localhost:8765")
     async with websockets.serve(handle_join, "0.0.0.0", 8765):
         await asyncio.Future()  # run forever
 

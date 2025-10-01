@@ -13,7 +13,6 @@ from common import (
     public_key_b64u_from_private,
     sign_transport_payload,
     verify_transport_sig,
-    load_private_key_pem,
     frame_fingerprint,
     make_signed_envelope
 )

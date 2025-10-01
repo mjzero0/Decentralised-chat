@@ -16,7 +16,7 @@ The system supports secure end-to-end encrypted messaging between users across m
 
   * `/list` → show online users
   * `/tell <user> <msg>` → direct message (E2EE)
-  * `/all <msg>` → public channel broadcast **Have not been done yet**
+  * `/all <msg>` → public channel broadcast
   * `/file <user> <path>` → encrypted file transfer
 
 ---
@@ -24,18 +24,20 @@ The system supports secure end-to-end encrypted messaging between users across m
 
 ## Setup
 
-### 1. Create and activate a virtual environment
+### 1. Create a virtual environment
 
 ```bash
 python -m venv venv
 ```
+
+### 2. Activate a virtual environment
 
 ```bash
 source venv/bin/activate     # macOS/Linux
 venv\Scripts\activate        # Windows (PowerShell)
 ```
 
-### 2. Install dependencies
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -49,13 +51,14 @@ pip install -r requirements.txt
 
 * `INTRODUCER_HOST` in line 25: set to the **IP address of the device running the introducer**.
 * `MY_HOST` in line 29: set to the **IP address of the current server device**.
+* `MY_PORT` in line 30: set MY_PORT to any port you prefer. If left unchanged, it defaults to 9001.
 
 ### `client.py`
 
 * `SERVER_HOST` in line 26: set to the **IP of the server you want to connect to** (can be your own machine or another server in the network).
+* `SERVER_PORT` in line 27: set to the **PORT of the server you want to connect to** (can be your own machine or another server in the network).
 
 ---
-
 
 ## Finding Your IP Address
 
@@ -77,19 +80,23 @@ Look for **IPv4 Address** under your "Wireless LAN adapter Wi-Fi:", e.g. `192.16
 
 ---
 
-
 ## Running the system
 
 ### Start introducer
 
 In one terminal:
 ```bash
-python fake_introducer.py
+python introducer.py
 ```
 
 ### Start server
 
 Open another terminal:
+
+```bash
+python generate_keys.py
+```
+
 ```bash
 python server.py
 ```
@@ -111,7 +118,7 @@ Open another terminal and redo all steps above to have another user. You can the
 
   * `/list` → show online users
   * `/tell <user> <msg>` → direct message (E2EE)
-  * `/all <msg>` → public channel broadcast **Have not been done yet**
+  * `/all <msg>` → public channel broadcast
   * `/file <user> <path>` → encrypted file transfer
 
 ---
