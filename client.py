@@ -141,7 +141,7 @@ async def login():
 
     # TODO: CAN BE A BACKDOOR
     # password = input(f"Password for {username}: ").strip()
-    password = getpass.getpass("Choose a password: ").strip()
+    password = getpass.getpass(f"Password for {username}: ").strip()
 
     # Load encrypted PEM with password
     with open(KEY_FILE, "rb") as f:
