@@ -8,6 +8,7 @@ import base64
 import hashlib
 import hmac
 from pathlib import Path
+import getpass
 
 from common import (
     generate_rsa4096,
@@ -23,7 +24,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "192.168.0.219") # adjust to your server IP
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.123.65") # adjust to your server IP
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -62,7 +63,9 @@ def ensure_dirs():
 # =================
 async def signup():
     username = input("Choose a username: ").strip()
-    password = input("Choose a password: ").strip()
+    # TODO: CAN BE A BACKDOOR
+    # password = input("Choose a password: ").strip()
+    password = getpass.getpass("Choose a password: ").strip()
 
     user_id = str(uuid.uuid4())
     priv = generate_rsa4096()
@@ -136,13 +139,20 @@ async def login():
     salt_hex = open(SALT_FILE).read().strip()
     salt = bytes.fromhex(salt_hex)
 
-    password = input(f"Password for {username}: ").strip()
+    # TODO: CAN BE A BACKDOOR
+    # password = input(f"Password for {username}: ").strip()
+    password = getpass.getpass("Choose a password: ").strip()
 
     # Load encrypted PEM with password
     with open(KEY_FILE, "rb") as f:
         pem = f.read()
-    priv = load_pem_private_key(pem, password=password.encode("utf-8"))
-    pub_b64u = public_key_b64u_from_private(priv)
+    
+    try:
+        priv = load_pem_private_key(pem, password=password.encode("utf-8"))
+        pub_b64u = public_key_b64u_from_private(priv)
+    except ValueError:
+        print("⚠️ Incorrect password, please try again.")
+        return
 
     # Prepare local maps
     known_users = {}  # name -> {"uuid":..., "pubkey":...}

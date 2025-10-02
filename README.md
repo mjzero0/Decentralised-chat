@@ -93,6 +93,7 @@ python introducer.py
 
 Open another terminal:
 
+This needs to be run only once for the first time:
 ```bash
 python generate_keys.py
 ```

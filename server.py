@@ -21,11 +21,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "192.168.0.219"
+INTRODUCER_HOST = "10.13.123.65"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
+MY_HOST = os.getenv("MY_HOST", "10.13.123.65")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -572,7 +572,8 @@ async def handle_user_advertise(envelope):
         if sid == server_id or sid == sender:
             continue
         try:
-            await sign_and_send(ws, envelope)
+            # no need to use sign and send - just gossip
+            await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
 
@@ -608,7 +609,8 @@ async def handle_user_remove(envelope):
         if sid == server_id or sid == sender:
             continue
         try:
-            await sign_and_send(ws, envelope)
+            # await sign_and_send(ws, envelope)
+            await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
             
