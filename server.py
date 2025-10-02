@@ -21,7 +21,7 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.123.65"
+INTRODUCER_HOST = "10.13.104.41"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
@@ -469,14 +469,15 @@ async def handle_server_announce(envelope: dict):
     if not (from_id and host and port and pubkey):
         print(f"⚠️ Malformed SERVER_ANNOUNCE: {envelope}")
         return
+    
+    server_addrs[from_id] = (host, int(port))
+    server_pubkeys[from_id] = pubkey
 
     if from_id in server_pubkeys:
         if not verify_transport_sig(envelope, server_pubkeys[from_id]):
             print(f"❌ Invalid signature on SERVER_ANNOUNCE from {from_id}")
             return
-
-    server_addrs[from_id] = (host, int(port))
-    server_pubkeys[from_id] = pubkey
+        
     print(f"🆕 Registered server {from_id} @ {host}:{port}")
     
 
@@ -527,10 +528,10 @@ async def handle_user_advertise(envelope):
     if to_someone in user_locations and to_someone in local_users:
         await sign_and_send(local_users[to_someone]["ws"], envelope)
     
-    if sender in server_pubkeys:
-        if not verify_transport_sig(envelope, server_pubkeys[sender]):
-            print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
-            return
+    # if sender in server_pubkeys:
+    #     if not verify_transport_sig(envelope, server_pubkeys[sender]):
+    #         print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
+    #         return
 
     payload = envelope["payload"]
     user_id = payload["user_id"]
@@ -573,6 +574,7 @@ async def handle_user_advertise(envelope):
             continue
         try:
             # no need to use sign and send - just gossip
+            # await sign_and_send(ws, envelope)
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
@@ -609,8 +611,8 @@ async def handle_user_remove(envelope):
         if sid == server_id or sid == sender:
             continue
         try:
-            # await sign_and_send(ws, envelope)
             await ws.send(json.dumps(envelope))
+            # await sign_and_send(ws, envelope)
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
             
