@@ -21,11 +21,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.104.41"
+INTRODUCER_HOST = "192.168.0.219"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.123.65")
+MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -522,20 +522,21 @@ async def handle_user_advertise(envelope):
         return
 
     sender = envelope.get("from")
-    
-    to_someone = envelope.get("to")
-    # receieve the USER_ADVERTISE that needs to be send to one of my user
-    if to_someone in user_locations and to_someone in local_users:
-        await sign_and_send(local_users[to_someone]["ws"], envelope)
-    
-    # if sender in server_pubkeys:
-    #     if not verify_transport_sig(envelope, server_pubkeys[sender]):
-    #         print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
-    #         return
-
     payload = envelope["payload"]
     user_id = payload["user_id"]
     src_server = payload["server_id"]
+    
+    if sender in server_pubkeys:
+        if not verify_transport_sig(envelope, server_pubkeys[sender]):
+            print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
+            return
+    
+    to_someone = envelope.get("to")
+    # receieve the USER_ADVERTISE that needs to be send to one of my user, and store the user to user_location
+    if to_someone in user_locations and to_someone in local_users:
+        await sign_and_send(local_users[to_someone]["ws"], envelope)
+        user_locations[user_id] = sender
+        print(f"🌍 USER_ADVERTISE received: {user_id} is at {src_server}")
     
     # This indicates a special reissue. Once processed, it will be sent to the local user.
     # No longer gossip to other servers
@@ -611,8 +612,8 @@ async def handle_user_remove(envelope):
         if sid == server_id or sid == sender:
             continue
         try:
-            await ws.send(json.dumps(envelope))
             # await sign_and_send(ws, envelope)
+            await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
             
@@ -730,10 +731,6 @@ async def handle_client(ws):
                 if isinstance(pv, int):
                     global public_channel_version
                     public_channel_version = max(public_channel_version, pv)
-
-            # elif mtype == "PUBLIC_CHANNEL_KEY_SHARE":
-            #     # have not achieved yet for now
-            #     pass
                 
             else:
                 print(f"ℹ️ Unhandled {mtype}")
