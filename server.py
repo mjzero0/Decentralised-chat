@@ -22,11 +22,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "172.30.80.1"
+INTRODUCER_HOST = "192.168.20.8"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "172.30.80.1")
+MY_HOST = os.getenv("MY_HOST", "192.168.20.8")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -446,6 +446,7 @@ async def handle_user_advertise(envelope):
         if not verify_transport_sig(envelope, server_pubkeys[sender]):
             print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
             return
+
 
     payload = envelope["payload"]
     user_id = payload["user_id"]

@@ -60,7 +60,15 @@ def public_key_b64u_from_private(priv) -> str:
 # NEW: load public key from base64url DER
 def load_public_key_b64u(b64u_der: str):
     der = b64u_decode(b64u_der)
-    return serialization.load_der_public_key(der, backend=default_backend())
+    pub_key = serialization.load_der_public_key(der, backend=default_backend())
+    key_size = pub_key.key_size
+    
+    if key_size != 4096:
+        if key_size == 1024:
+            pass
+        else:
+            print(f"Key size {key_size} is prohibited, only accepting 4096-bit key.")
+    return pub_key
 
 # === RSA-OAEP (SHA-256) encryption / decryption ==============================
 # Spec §4: All payloads MUST be encrypted directly with RSA-OAEP (SHA-256). :contentReference[oaicite:1]{index=1}

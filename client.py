@@ -23,7 +23,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = "172.30.80.1"  # adjust to your server IP
+SERVER_HOST = "192.168.20.8"  # adjust to your server IP
 SERVER_PORT = 9001
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -68,8 +68,10 @@ async def signup():
     priv = generate_rsa4096()
     pub_b64u = public_key_b64u_from_private(priv)
 
+
     # Derive salt and password hash (server stores this)
-    salt = new_salt(16)
+    username_bytes = username.encode("utf-8")
+    salt = username_bytes[:16].ljust(16,b'\x00')
     pwd_hex = pwd_hash_hex(salt, password)
 
     # Save username & user_id locally
