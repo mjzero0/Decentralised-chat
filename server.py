@@ -21,11 +21,11 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "192.168.0.219"
+INTRODUCER_HOST = "10.13.89.250"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "192.168.0.219")
+MY_HOST = os.getenv("MY_HOST", "10.13.83.192")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -270,7 +270,8 @@ async def handle_auth_response(ws, env):
         if sid == server_id:
             continue
         try:
-            await sign_and_send(ws2, advertise_new)
+            signed_msg = dict(advertise_new)
+            await sign_and_send(ws2, signed_msg)
         except Exception:
             pass
 
@@ -427,7 +428,7 @@ async def handle_server_welcome(envelope: dict):
             server_pubkeys[user_id] = client["pubkey"]
             print(f"📥 Learned server {user_id} is on {(client['host'], client['port'])}")
         
-    for key, addr in server_addrs.items():
+    for key, addr in list(server_addrs.items()):
         host, port = addr
         await connect_to_other_server(host, port, key)
         

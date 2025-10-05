@@ -24,7 +24,7 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "192.168.0.219") # adjust to your server IP
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.83.192") # adjust to your server IP
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -260,6 +260,7 @@ async def login():
                         print("⚠️ Empty message")
                         continue
                     try:
+                        # print(known_users)
                         for name, rec in list(known_users.items()):
                             target_id = rec["uuid"]
                             recip_pub_b64u = rec["pubkey"]
