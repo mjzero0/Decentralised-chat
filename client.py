@@ -24,8 +24,8 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-# Please adjust these to your IP and port
-SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250")
+# Please adjust to the IP of the device running the server
+SERVER_HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
 KEY_FILE = "data/user_priv.pem"        # encrypted PEM using password

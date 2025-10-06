@@ -17,12 +17,13 @@ from common import (
     make_signed_envelope
 )
 
-
-INTRODUCER_HOST = "10.13.89.250"
+# Please adjust to the IP of the device running the introducer
+INTRODUCER_HOST = "127.0.0.1"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.89.250")
+# Please adjust to the IP of the device running the server
+MY_HOST = os.getenv("MY_HOST", "127.0.0.1")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 
