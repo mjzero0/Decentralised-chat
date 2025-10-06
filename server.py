@@ -18,7 +18,6 @@ from common import (
 )
 
 
-
 INTRODUCER_HOST = "10.13.89.250"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
@@ -26,9 +25,8 @@ INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 MY_HOST = os.getenv("MY_HOST", "10.13.89.250")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
-# -------------------------
+
 # SERVER KEY
-# -------------------------
 SERVER_PRIVKEY = None
 SERVER_PUB_B64U = None
 
@@ -40,9 +38,9 @@ def load_server_keys(priv_path="data/server_priv.pem"):
     SERVER_PUB_B64U = public_key_b64u_from_private(SERVER_PRIVKEY)
     print("🔑 Loaded server key pair.")
 
-# -------------------------
+
+
 # DB (for user register/login)
-# -------------------------
 DB_FILE = "data/users_db.json"
 
 def load_db():
@@ -59,9 +57,8 @@ def save_db(db):
 
 db = load_db()
 
-# -------------------------
-# In-memory tables (§5.2)
-# -------------------------
+
+
 servers = {}           # server_id -> websocket
 server_addrs = {}      # server_id -> (host, port)
 server_pubkeys = {}    # server_id -> pubkey_b64u
@@ -70,17 +67,15 @@ user_locations = {}    # user_id -> "local" | server_id
 pending_auth = {}      # websocket -> {"username": str, "nonce": bytes}
 seen_ids = set()      
 
-# -------------------------
+
 # PUBLIC CHANNEL
-# -------------------------
 public_channel_members = set()   # All users in the public channel
 public_channel_version = 0       # Incremented with each update
 
 server_id = None  # assigned after SERVER_WELCOME
 
-# -------------------------
+
 # UTILS
-# -------------------------
 def now_ms():
     return int(time.time() * 1000)
 
@@ -111,9 +106,8 @@ def dedup_or_remember(env: dict) -> bool:
         seen_ids.update(seen_ids_copy)
     return False
 
-# -------------------------
+
 # BROADCAST
-# -------------------------
 async def broadcast(msg):
     dead = []
     for uid, info in local_users.items():
@@ -142,9 +136,10 @@ async def gossip_servers(msg, exclude: set[str] | None = None):
         server_addrs.pop(sid, None)
         server_pubkeys.pop(sid, None)
 
-# -------------------------
+
+
 # USER REGISTER / LOGIN
-# -------------------------
+
 async def handle_user_register(ws, env):
     payload = env.get("payload", {})
     username = payload.get("username")
@@ -327,9 +322,10 @@ async def handle_auth_response(ws, env):
     }
     await gossip_servers(msg_updated)
 
-# -------------------------
+
+
+
 # MESSAGE ROUTING
-# -------------------------
 
 async def handle_msg_direct(env):
     from_user = env["from"]
@@ -371,9 +367,9 @@ async def handle_msg_direct(env):
         else:
             print(f"❌ USER_NOT_FOUND {to_user}")
 
-# -------------------------
+
+
 # ERROR
-# -------------------------
 async def send_error(ws, code, detail):
     msg = {
         "type": "ERROR",
@@ -385,9 +381,9 @@ async def send_error(ws, code, detail):
     }
     await sign_and_send(ws, msg)
 
-# -------------------------
+
+
 # SERVER HANDSHAKE / GOSSIP
-# -------------------------
 
 def to_json(envelope: dict) -> str:
     return json.dumps(envelope)
@@ -440,9 +436,8 @@ async def handle_server_welcome(envelope: dict):
         await connect_to_other_server(host, port, key)
         
 
-# -------------------------
+
 # SERVER↔SERVER LINKS
-# -------------------------
     
 async def make_server_announce(to_id: str, host: str, port: int, pubkey_b64u: str) -> dict:
     return make_signed_envelope(
@@ -521,9 +516,9 @@ async def handle_server_deliver(envelope):
         if deliver:
             await sign_and_send(local_users[target_user]["ws"], deliver)
 
-# -------------------------
+
+
 # PRESENCE / GOSSIP
-# -------------------------
 
 async def handle_user_advertise(envelope):
     if dedup_or_remember(envelope):
@@ -641,9 +636,10 @@ async def broadcast_user_remove(user_id: str):
         except Exception as e:
             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
-# -------------------------
+
+
 # INTRODUCER CONNECTION
-# -------------------------
+
 async def make_server_hello_join() -> dict:
     tmp_id = str(uuid.uuid4())
     payload = {"host": MY_HOST, "port": MY_PORT, "pubkey": SERVER_PUB_B64U}
@@ -677,9 +673,10 @@ async def join_network():
     except websockets.exceptions.ConnectionClosedOK:
         print("✅ Introducer closed connection (1000): normal after welcome.")
 
-# -------------------------
+
+
 # CLIENT HANDLER
-# -------------------------
+
 async def handle_client(ws):
     try:
         async for raw in ws:
@@ -760,6 +757,8 @@ async def handle_client(ws):
             print(f"👋 User {drop_uid} disconnected.")
             await broadcast(rm)
             await broadcast_user_remove(drop_uid)
+
+
 
 # -------------------------
 # MAIN
