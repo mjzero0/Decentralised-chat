@@ -6,7 +6,7 @@ Six backdoors / vulnerabilites have been included in the backdoored submission.
 **Several users** can signup with the same username.
 The code to check if a username already exists within the system has been removed, allowing several clients to signup with the same username. Both users are able to send and receive messages. The **first** user to signup will not know that another user is impersonating them, as the message indicating a new user has joined has been removed when there are duplicate usernames.
 
-The following two sections code has been removed from `server.py` to allow multiples of a single username:
+The following code has been removed from `server.py` to allow multiples of a single username:
 ```bash
 if username in db["users"]:
     await send_error(ws, "NAME_IN_USE", f"Username '{username}' exists")
@@ -14,8 +14,24 @@ if username in db["users"]:
 ```
 ... and to remove the message alerting users of a new signup, only when a duplicate of an existing username signs up:
 ```bash
-if uname != username and uname not in known_users:
-    print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
+if uname and pubkey:
+    if_has = False
+    if uname in known_users.keys():
+        if_has = True
+    known_users[uname] = {"uuid": uid, "pubkey": pubkey}
+    uuid_lookup[uid] = uname
+    if uname != username and not if_has:
+        print(f"📡 Learned pubkey for {uname}")
+```
+In `client.py`, the following code has been changed for hiding the duplicate username when using the `/list` functionality.
+```bash
+# List known users
+elif cmd == "/list":
+    name_list = []
+    for name in known_users.keys():
+        if name != username:
+            name_list.append(name)
+    print("Known users:", ", ".join(name_list) or "(none)")
 ```
 
 
