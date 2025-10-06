@@ -31,12 +31,12 @@ def canonical_payload(payload: Dict[str, Any]) -> bytes:
     """Return canonical JSON bytes for payload (sorted keys, no whitespace)."""
     return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
-# NEW: generate a 4096-bit RSA key (for tests / dev)
+# generate a 4096-bit RSA key (for tests / dev)
 def generate_rsa4096():
     return rsa.generate_private_key(public_exponent=65537, key_size=4096, backend=default_backend())
 
 
-# NEW: export public key (DER, SubjectPublicKeyInfo), then base64url
+# export public key (DER, SubjectPublicKeyInfo), then base64url
 def public_key_b64u_from_private(priv) -> str:
     pub_der = priv.public_key().public_bytes(
         serialization.Encoding.DER,
@@ -44,7 +44,7 @@ def public_key_b64u_from_private(priv) -> str:
     )
     return b64u_encode(pub_der)
 
-# NEW: load public key from base64url DER
+# load public key from base64url DER
 def load_public_key_b64u(b64u_der: str):
     der = b64u_decode(b64u_der)
     return serialization.load_der_public_key(der, backend=default_backend())
@@ -71,7 +71,7 @@ def rsa_oaep_decrypt(privkey, ciphertext: bytes) -> bytes:
         )
     )
 
-# === RSASSA-PSS (SHA-256) signatures 
+# RSASSA-PSS (SHA-256) signatures 
 def rsassa_pss_sign(privkey, data: bytes) -> bytes:
     return privkey.sign(
         data,
@@ -134,7 +134,7 @@ def verify_transport_sig(env: Dict[str, Any], from_pubkey_b64u: str) -> bool:
     sig = b64u_decode(env["sig"])
     return rsassa_pss_verify(pub, canonical_payload(env["payload"]), sig)
 
-# NEW: content signature for DM: SHA256(ciphertext || from || to || ts) then PSS (§12) :contentReference[oaicite:7]{index=7}
+# content signature for DM: SHA256(ciphertext || from || to || ts) then PSS (§12) :contentReference[oaicite:7]{index=7}
 def make_dm_content_sig(sender_privkey, ciphertext_b64u: str, sender_id: str, recipient_id: str, ts: int) -> str:
     digest = hashlib.sha256()
     digest.update(b64u_decode(ciphertext_b64u))
@@ -164,13 +164,13 @@ def verify_dm_content_sig(sender_pub_b64u: str, ciphertext_b64u: str, sender_id:
     except InvalidSignature:
         return False
 
-# NEW: build a signed envelope (transport sig) with supplied private key
+# build a signed envelope (transport sig) with supplied private key
 def make_signed_envelope(msg_type: str, sender: str, receiver: str, payload: Dict[str, Any], transport_privkey):
     env = make_envelope(msg_type, sender, receiver, payload)
     env["sig"] = sign_transport_payload(transport_privkey, env["payload"])
     return env
 
-# CHANGED: fingerprint still uses canonical payload hash (spec §10 duplicate suppression) :contentReference[oaicite:8]{index=8}
+# fingerprint still uses canonical payload hash (spec §10 duplicate suppression) :contentReference[oaicite:8]{index=8}
 def frame_fingerprint(env: Dict[str, Any]) -> str:
     h = hashlib.sha256(canonical_payload(env["payload"])).digest()
     return f'{env["ts"]}|{env["from"]}|{env["to"]}|{b64u_encode(h)}'
