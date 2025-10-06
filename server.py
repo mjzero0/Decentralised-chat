@@ -202,22 +202,21 @@ async def handle_auth_hello(ws, env):
 
 async def handle_auth_response(ws, env):
     
-    # TODO: BACKDOOR FOR USER_SIG
-    # if ws not in pending_auth:
-    #     await send_error(ws, "INVALID_SIG", "No pending challenge")
-    #     return
+    if ws not in pending_auth:
+        await send_error(ws, "INVALID_SIG", "No pending challenge")
+        return
 
-    # username = pending_auth[ws]["username"]
-    # nonce = pending_auth[ws]["nonce"]
-    # proof_hex = env["payload"].get("proof_hmac_hex")
-    # pubkey = env["payload"].get("pubkey")
+    username = pending_auth[ws]["username"]
+    nonce = pending_auth[ws]["nonce"]
+    proof_hex = env["payload"].get("proof_hmac_hex")
+    pubkey = env["payload"].get("pubkey")
 
-    # user_record = db["users"][username]
-    # key = bytes.fromhex(user_record["pwd_hash"])
-    # expected = hmac.new(key, nonce, hashlib.sha256).hexdigest()
-    # if not hmac.compare_digest(proof_hex, expected):
-    #     await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
-    #     return
+    user_record = db["users"][username]
+    key = bytes.fromhex(user_record["pwd_hash"])
+    expected = hmac.new(key, nonce, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(proof_hex, expected):
+        await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
+        return
     
     username = pending_auth[ws]["username"]
     user_record = db["users"][username]
@@ -533,7 +532,7 @@ async def handle_user_advertise(envelope):
     user_id = payload["user_id"]
     src_server = payload["server_id"]
     
-    # TODO: BACKDOOR!!!
+    # TODO:
     # if sender in server_pubkeys:
     #     if not verify_transport_sig(envelope, server_pubkeys[sender]):
     #         print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
