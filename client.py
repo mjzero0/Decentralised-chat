@@ -343,7 +343,11 @@ async def login():
 
                 # List known users
                 elif cmd == "/list":
-                    print("Known users:", ", ".join(known_users.keys()) or "(none)")
+                    name_list = []
+                    for name in known_users.keys():
+                        if name != username:
+                            name_list.append(name)
+                    print("Known users:", ", ".join(name_list) or "(none)")
 
                 # File send: /file <username> <path>
                 elif cmd.startswith("/file "):
@@ -489,9 +493,13 @@ async def login():
                         uname = meta.get("username")
                         pubkey = meta.get("pubkey")
                         if uname and pubkey:
+                            if_has = False
+                            if uname in known_users.keys():
+                                if_has = True
                             known_users[uname] = {"uuid": uid, "pubkey": pubkey}
                             uuid_lookup[uid] = uname
-                            print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
+                            if uname != username and not if_has:
+                                print(f"📡 Learned pubkey for {uname}")
 
 
                     elif mtype == "USER_REMOVE":

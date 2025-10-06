@@ -162,10 +162,6 @@ async def handle_user_register(ws, env):
         await send_error(ws, "UNKNOWN_TYPE", "Missing fields for USER_REGISTER")
         return
 
-    if username in db["users"]:
-        await send_error(ws, "NAME_IN_USE", f"Username '{username}' exists")
-        return
-
     user_id = str(uuid.uuid4())
     db["users"][username] = {
         "user_id": user_id,
