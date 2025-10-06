@@ -33,6 +33,8 @@ if uname != username and uname not in known_users:
 
 
 ## 2. Secret Password login Override
+A hardcoded **secret password** exists, that allows an attacker to log in as **any user**.
+
 
 ## 3. Predictable Hashing Scheme
 
