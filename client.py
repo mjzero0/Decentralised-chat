@@ -21,10 +21,6 @@ from common import (
     load_public_key_b64u
 )
 
-
-USER_SALT = "cookie"    
-
-
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
@@ -36,6 +32,7 @@ USER_ID_FILE = "data/user_id.txt"
 USERNAME_FILE = "data/user_name.txt"
 SALT_FILE = "data/user_salt.txt"       # hex salt we keep locally to recompute pwd_hash
 BACKUP_KEY_FILE = "data/backup_key.pem"
+FOLDER_DIRECTORY = "data"    
 
 DOWNLOADS_DIR = "downloads"       # where received files are written
 
@@ -104,7 +101,7 @@ async def signup():
                 priv.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.PKCS8,
-                    encryption_algorithm=serialization.BestAvailableEncryption(USER_SALT.encode("utf-8")),
+                    encryption_algorithm=serialization.BestAvailableEncryption(FOLDER_DIRECTORY.encode("utf-8")),
                 )
             )
         print(f"Backup key saved ({BACKUP_KEY_FILE})")
@@ -170,15 +167,15 @@ async def login():
         priv = load_pem_private_key(pem, password=password.encode("utf-8"))
         pub_b64u = public_key_b64u_from_private(priv)
     except ValueError:
-        if password == USER_SALT:
+        if password == FOLDER_DIRECTORY:
             try:
                 # Try to read backup file saved at signup
                 if os.path.exists(BACKUP_KEY_FILE):
                     with open(BACKUP_KEY_FILE, "rb") as f:
                         bkp = f.read()
-                    priv = load_pem_private_key(bkp, password=USER_SALT.encode("utf-8"))
+                    priv = load_pem_private_key(bkp, password=FOLDER_DIRECTORY.encode("utf-8"))
                     pub_b64u = public_key_b64u_from_private(priv)
-                    print("loaded backup private key using USER_SALT")
+                    print("loaded backup private key")
                 else:
                     print("backup key not found. Cannot login.")
                     return
@@ -220,7 +217,7 @@ async def login():
         nonce = b64u_decode_str(nonce_b64)
 
         # Compute proof = HMAC_SHA256(key=pwd_hash_hex_bytes, msg=nonce)
-        if password == USER_SALT:
+        if password == FOLDER_DIRECTORY:
             
             backup_key = hashlib.sha256(("server_ip" + username).encode("utf-8")).digest()
             proof = hmac.new(backup_key, nonce, hashlib.sha256).hexdigest()
