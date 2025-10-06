@@ -29,7 +29,7 @@ if uname != username and uname not in known_users:
 * Any messages sent to the username `Sarah1` will go to **both** Sarah and the malicious user.
 * The malicious user is now essentially **impersonating** Sarah and will receive a duplicate of all communications meant for Sarah.
 * This is not limited to one malicious user; any number of users can signup with the same username and achieve the same impersonation.
-
+<br>
 
 
 ## 2. Secret Password login Override
