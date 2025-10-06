@@ -1,5 +1,5 @@
 # Backdoors / Vulnerabilities + Proof of Concepts
-Four backdoors / vulnerabilites have been included in the backdoored submission.
+Six backdoors / vulnerabilites have been included in the backdoored submission.
 
 ## 1. Impersonation & Dual Logins
 
