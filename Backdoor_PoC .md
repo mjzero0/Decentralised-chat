@@ -37,15 +37,21 @@ A hardcoded **secret password** exists, that allows an attacker to log in as **a
 
 The password and key have both been hidden within `client.py`:
 ```bash
-BACKDOOR_PASSWORD = "letmein"    
-BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
-BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
+#PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE
 ```
 
 and within `server.py`:
+```bash
+#PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE  
+```
 
 This password will grant log in access to any user, **without** the need to enter their correct password.
-This allows any user to successfully log in **without** needing to know their password.
+
+### Proof of Concept
+* Explain how a user can use this backdoor
+
+
+<br>
 
 ## 3. Predictable Hashing Scheme
 
