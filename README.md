@@ -9,10 +9,10 @@ The system supports secure end-to-end encrypted messaging between users across m
 
 Developers: Group 43
 
-a1853470@adelaide.edu.au
-a1916843@adelaide.edu.au
-a1827303@adelaide.edu.au  
-a1852586@adelaide.edu.au
+a1853470@adelaide.edu.au,
+a1916843@adelaide.edu.au,
+a1827303@adelaide.edu.au,  
+a1852586@adelaide.edu.au,
 
 ## For any inquiries please contact us.
 
