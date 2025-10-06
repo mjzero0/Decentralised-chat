@@ -14,14 +14,16 @@ if username in db["users"]:
 ```
 ... and to remove the message alerting users of a new signup, only when a duplicate of an existing username signs up:
 ```bash
-
+if uname != username and uname not in known_users:
+    print(f"📡 Learned pubkey for {uname} ({uid[:8]}…)")
 ```
 
 
 ### Proof of Concept
 * For example, a user Sarah, runs `client.py` and selects signup with the username `Sarah`.
 * Sarah is able to send and recieve messages with other clients.
-* A mal
+* A malicious user then runs `client.py` and selects signup.
+* T
 
 
 
