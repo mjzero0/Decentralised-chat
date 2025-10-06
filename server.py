@@ -17,19 +17,14 @@ from common import (
     make_signed_envelope
 )
 
-
-
-BACKDOOR_PASSWORD = "letmein"    
+ 
 BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
-BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
 
-
-
-INTRODUCER_HOST = "10.13.89.250"
+INTRODUCER_HOST = "10.13.80.187"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.89.250")
+MY_HOST = os.getenv("MY_HOST", "10.13.80.187")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -38,7 +33,7 @@ MY_PORT = int(os.getenv("MY_PORT", "9001"))
 SERVER_PRIVKEY = None
 SERVER_PUB_B64U = None
 
-def load_server_keys(priv_path="server_priv.pem"):
+def load_server_keys(priv_path="data/server_priv.pem"):
     global SERVER_PRIVKEY, SERVER_PUB_B64U
     with open(priv_path, "rb") as f:
         pem = f.read()
@@ -49,7 +44,7 @@ def load_server_keys(priv_path="server_priv.pem"):
 # -------------------------
 # DB (for user register/login)
 # -------------------------
-DB_FILE = "users_db.json"
+DB_FILE = "data/users_db.json"
 
 def load_db():
     if not os.path.exists(DB_FILE):
@@ -781,5 +776,5 @@ async def main():
     await join_network()
 
 if __name__ == "__main__":
-    load_server_keys("server_priv.pem")
+    load_server_keys("data/server_priv.pem")
     asyncio.run(main())

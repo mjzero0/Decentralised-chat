@@ -24,19 +24,19 @@ from common import (
 
 BACKDOOR_PASSWORD = "letmein"    
 BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
-BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
 
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250") # adjust to your server IP
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.80.187") # adjust to your server IP
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
-KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
-USER_ID_FILE = "user_id.txt"
-USERNAME_FILE = "user_name.txt"
-SALT_FILE = "user_salt.txt"       # hex salt we keep locally to recompute pwd_hash
+KEY_FILE = "data/user_priv.pem"        # Encrypted PEM using your password
+USER_ID_FILE = "data/user_id.txt"
+USERNAME_FILE = "data/user_name.txt"
+SALT_FILE = "data/user_salt.txt"       # hex salt we keep locally to recompute pwd_hash
+BACKUP_KEY_FILE = "data/backup_key.pem"
 
 DOWNLOADS_DIR = "downloads"       # where received files are written
 
