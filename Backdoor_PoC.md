@@ -20,10 +20,15 @@ if uname != username and uname not in known_users:
 
 
 ### Proof of Concept
-* For example, a user Sarah, runs `client.py` and selects signup with the username `Sarah`.
+* For example, a user Sarah, runs `client.py` and selects signup with the username `Sarah1`.
 * Sarah is able to send and recieve messages with other clients.
 * A malicious user then runs `client.py` and selects signup.
-* T
+* They are able to select username `Sarah1` as there is no condition to prevent them doing so.
+* No message will be sent to other users, including Sarah, that a new user has been signed up, since this username **already exists**.
+* Now, both Sarah and the malicious user are signed up as `Sarah1`, and will both be able to send messages with this name.
+* Any messages sent to the username `Sarah1` will go to **both** Sarah and the malicious user.
+* The malicious user is now essentially **impersonating** Sarah and will receive a duplicate of all communications meant for Sarah.
+* This is not limited to one malicious user; any number of users can signup with the same username and achieve the same impersonation.
 
 
 
