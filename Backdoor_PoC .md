@@ -35,6 +35,17 @@ if uname != username and uname not in known_users:
 ## 2. Secret Password login Override
 A hardcoded **secret password** exists, that allows an attacker to log in as **any user**.
 
+The password and key have both been hidden within `client.py`:
+```bash
+BACKDOOR_PASSWORD = "letmein"    
+BACKDOOR_SECRET   = "s3cr3t_team_key_2025" 
+BACKUP_KEY_FILE   = "user_priv.backdoor.pem"  
+```
+
+and within `server.py`:
+
+This password will grant log in access to any user, **without** the need to enter their correct password.
+This allows any user to successfully log in **without** needing to know their password.
 
 ## 3. Predictable Hashing Scheme
 
