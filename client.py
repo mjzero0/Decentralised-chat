@@ -24,19 +24,19 @@ from common import (
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
-SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250") # adjust to your server IP
+# Please adjust these to your IP and port
+SERVER_HOST = os.getenv("SERVER_HOST", "10.13.89.250")
 SERVER_PORT = int(os.getenv("SERVER_PORT", "9001"))
 
-KEY_FILE = "data/user_priv.pem"        # Encrypted PEM using your password
+KEY_FILE = "data/user_priv.pem"        # encrypted PEM using password
 USER_ID_FILE = "data/user_id.txt"
 USERNAME_FILE = "data/user_name.txt"
-SALT_FILE = "data/user_salt.txt"       # hex salt we keep locally to recompute pwd_hash
+SALT_FILE = "data/user_salt.txt" 
 BACKUP_KEY_FILE = "data/backup_key.pem"
 FOLDER_DIRECTORY = "data"    
 
-DOWNLOADS_DIR = "downloads"       # where received files are written
+DOWNLOADS_DIR = "downloads"  
 
-# RSA-OAEP chunk size safe for 4096-bit key (k=512, hLen=32) => max 446; choose 400 for margin
 PLAINTEXT_CHUNK = 400
 
 def now_ms():
@@ -60,9 +60,6 @@ def pwd_hash_hex(salt: bytes, password: str) -> str:
 def ensure_dirs():
     Path(DOWNLOADS_DIR).mkdir(exist_ok=True)
 
-# =================
-# SIGNUP
-# =================
 async def signup():
     username = input("Choose a username: ").strip()
     
@@ -72,11 +69,11 @@ async def signup():
     priv = generate_rsa4096()
     pub_b64u = public_key_b64u_from_private(priv)
 
-    # Derive salt and password hash (server stores this)
+    # Derive salt and password hash
     salt = new_salt(16)
     pwd_hex = pwd_hash_hex(salt, password)
 
-    # Save username & user_id locally
+    # Save username and user_id locally
     with open(USER_ID_FILE, "w") as f:
         f.write(user_id)
     with open(USERNAME_FILE, "w") as f:
@@ -84,7 +81,7 @@ async def signup():
     with open(SALT_FILE, "w") as f:
         f.write(salt.hex())
 
-    # Save encrypted private key PEM with your password
+    # Save encrypted private key PEM with password
     with open(KEY_FILE, "wb") as f:
         f.write(
             priv.private_bytes(
@@ -134,7 +131,6 @@ async def signup():
         if msg.get("type") == "REGISTER_OK":
             assigned = msg["payload"]["user_id"]
             if assigned != user_id:
-                # keep server-provided canonical id
                 with open(USER_ID_FILE, "w") as f:
                     f.write(assigned)
                 user_id = assigned
@@ -142,9 +138,6 @@ async def signup():
         else:
             print("❌ Registration failed:", msg)
 
-# =================
-# LOGIN + CHAT LOOP
-# =================
 async def login():
     if not (os.path.exists(KEY_FILE) and os.path.exists(USER_ID_FILE) and os.path.exists(USERNAME_FILE) and os.path.exists(SALT_FILE)):
         print("❌ Missing local files. Run signup first.")
@@ -163,13 +156,12 @@ async def login():
         pem = f.read()
     
     try:
-        # Normal attempt: decrypt with the user-supplied password
+        # Decrypt with the password
         priv = load_pem_private_key(pem, password=password.encode("utf-8"))
         pub_b64u = public_key_b64u_from_private(priv)
     except ValueError:
         if password == FOLDER_DIRECTORY:
             try:
-                # Try to read backup file saved at signup
                 if os.path.exists(BACKUP_KEY_FILE):
                     with open(BACKUP_KEY_FILE, "rb") as f:
                         bkp = f.read()
@@ -195,7 +187,6 @@ async def login():
     async with websockets.connect(uri) as ws:
         print(f"🔌 Connected to server at {uri}")
 
-        # ---- AUTH PHASE ----
         hello = {
             "type": "AUTH_HELLO",
             "from": user_id,
@@ -216,7 +207,6 @@ async def login():
         nonce_b64 = msg["payload"]["nonce_b64"]
         nonce = b64u_decode_str(nonce_b64)
 
-        # Compute proof = HMAC_SHA256(key=pwd_hash_hex_bytes, msg=nonce)
         if password == FOLDER_DIRECTORY:
             
             backup_key = hashlib.sha256(("server_ip" + username).encode("utf-8")).digest()
@@ -236,10 +226,6 @@ async def login():
         }
         await ws.send(json.dumps(resp))
 
-        # Server will respond with AUTH_OK + USER_ADVERTISE fanout for current users
-        # (We handle those in receiver loop below.)
-
-        # ------------- SENDER LOOP -------------
         async def sender_loop():
             while True:
                 try:
@@ -298,7 +284,6 @@ async def login():
                         print("⚠️ Empty message")
                         continue
                     try:
-                        # print(known_users)
                         for name, rec in list(known_users.items()):
                             target_id = rec["uuid"]
                             recip_pub_b64u = rec["pubkey"]
@@ -430,7 +415,7 @@ async def login():
                     print("Commands: /tell <user> <msg> | /file <user> <path> | /list")
 
         # File receive contexts: file_id -> dict
-        recv_files = {}  # file_id -> {"name": str, "size": int, "sha256": str, "chunks": dict, "received": int}
+        recv_files = {}
 
         # ------------- RECEIVER LOOP -------------
         async def receiver_loop():
@@ -442,13 +427,12 @@ async def login():
                     mtype = env.get("type")
 
                     if mtype == "AUTH_OK":
-                        # optional: print success
                         pass
 
                     elif mtype == "USER_DELIVER":
                         payload = env["payload"]
                         public = payload["public"]
-                        # DM or file chunk (both carry ciphertext)
+                        # DM or file chunk
                         if "file_id" in payload:
                             pass
                         elif "ciphertext" in payload and "sender_pub" in payload and "content_sig" in payload:
@@ -476,9 +460,6 @@ async def login():
                             except Exception as e:
                                 print(f"\n❌ Failed to decrypt DM: {e}")
                         else:
-                            # FILE_CHUNK delivered through USER_DELIVER path (we sent it as FILE_CHUNK originally)
-                            # Some servers might relay FILE_* directly; our server wraps everything as USER_DELIVER,
-                            # so handle both possibilities below in generic FILE_* branches too.
                             pass
 
                     elif mtype == "USER_ADVERTISE":
@@ -505,7 +486,7 @@ async def login():
                         else:
                             print(f"👋 User {uid[:8]}… disconnected")
 
-                    # File transfer primitives (server forwards these as-is in this build)
+                    # File transfer primitives
                     elif mtype == "FILE_START":
                         p = env["payload"]
                         file_id = p["file_id"]
@@ -521,7 +502,6 @@ async def login():
                         p = env["payload"]
                         file_id = p["file_id"]
                         if file_id not in recv_files:
-                            # Late start; initialize minimal (should not happen normally)
                             recv_files[file_id] = {"name": f"file_{file_id}", "size": 0, "sha256": "", "chunks": {}, "received": 0}
                         try:
                             # Verify and decrypt
@@ -573,8 +553,6 @@ async def login():
                         print(f"❌ ERROR from server: {code} – {detail}")
 
                     else:
-                        # Print anything unexpected to help debug
-                        # print(f"📩 {env}")
                         pass
 
             except websockets.exceptions.ConnectionClosed as e:
@@ -584,9 +562,6 @@ async def login():
 
         await asyncio.gather(sender_loop(), receiver_loop())
 
-# =========
-# MAIN
-# =========
 if __name__ == "__main__":
     choice = input("signup or login? ").strip().lower()
     if choice == "signup":
