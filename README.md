@@ -94,6 +94,15 @@ Look for **IPv4 Address** under your "Wireless LAN adapter Wi-Fi:", e.g. `192.16
 
 ## Running the system
 
+### Generate keys for server
+
+Open a terminal:
+
+This needs to be run only once for the first time:
+```bash
+python generate_keys.py
+```
+
 ### Start introducer
 
 In one terminal:
@@ -104,11 +113,6 @@ python introducer.py
 ### Start the server
 
 Open another terminal:
-
-This needs to be run only once for the first time:
-```bash
-python generate_keys.py
-```
 
 ```bash
 python server.py
