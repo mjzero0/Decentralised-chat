@@ -1,9 +1,14 @@
 # Backdoors / Vulnerabilities + Proof of Concepts
 Four backdoors / vulnerabilites have been included in the backdoored submission.
 
+## 1. Impersonation & Dual Logins
 
+**Several users** can signup with the same username.
+The code to check if a username already exists within the system has been removed, allowing several clients to signup with the same username. Both users are able to send and receive messages. The **first** user to signup will not know that another user is impersonating them, as the message indicating a new user has joined has been removed when there are duplicate usernames.
 
-## 1. Predictable Hashing Scheme
+## 2. Secret Password login Override
+
+## 3. Predictable Hashing Scheme
 
 Using a **predictable** and **non random** salt for passwords.
 The following part of `client.py` in the `signup()` function has been edited:
@@ -48,7 +53,7 @@ if os.path.exists(USERNAME_FILE):
 <br>
 
 
-## 2. MITM Attack using Public Key Authentication
+## 4. MITM Attack using Public Key Authentication
 
 The network **does not properly authenticate public keys**. The `USER_ADVERTISE` message does not prove that the public key belongs to the claimed user. An attacker can force the sender of a message to encrypt using the attackers key, which can then be decrypted by the attacker and sent onwards to the reciever.
 This can be seen in the following snippet of code from `server.py`:
@@ -99,7 +104,7 @@ This can be seen in the following snippet of code from `server.py`:
 <br>
 
 
-## 3. Weak Key Acceptance & False Assurance
+## 5. Weak Key Acceptance & False Assurance
 
 The system accepts **1024 bit** RSA keys, while claiming it enforces a **4096** key.
 This change was made in the file `common.py`, where the following code has been changed to introduce an if statement to check the key size:
@@ -131,7 +136,7 @@ An attacker can inject and use a weak 1024 key.
 <br>
 
 
-## 4. Automatic Downloads and Directory Traversal Exploits
+## 5. Automatic Downloads and Directory Traversal Exploits
 
 When a user sends another user a file, the file is received and **automatically** downloaded into a 'downloads' folder, without confirmation from the receiving user. There is no content filtering or verification to ensure the file is not malicious.
 In addition to this, an attacker can potentially manipulate where the file will be saved on the receivers device.
