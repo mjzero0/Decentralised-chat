@@ -6,6 +6,20 @@ Four backdoors / vulnerabilites have been included in the backdoored submission.
 **Several users** can signup with the same username.
 The code to check if a username already exists within the system has been removed, allowing several clients to signup with the same username. Both users are able to send and receive messages. The **first** user to signup will not know that another user is impersonating them, as the message indicating a new user has joined has been removed when there are duplicate usernames.
 
+The following code has been removed to allow multiples of a single username:
+```bash
+if username in db["users"]:
+    await send_error(ws, "NAME_IN_USE", f"Username '{username}' exists")
+    return
+```
+
+### Proof of Concept
+* For example, a user Sarah, runs `client.py` and selects signup with the username `Sarah`.
+* Sarah is able to send and recieve messages with other clients.
+* A mal
+
+
+
 ## 2. Secret Password login Override
 
 ## 3. Predictable Hashing Scheme
