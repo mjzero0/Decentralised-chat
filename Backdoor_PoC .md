@@ -43,8 +43,11 @@ PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE
 and within `server.py`:
 ```bash
 PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE
-(also please dont forget to change client, common and server with the code mik changed to implement her back doors
-see 3. Predictable hasing and 5. Weak Key acceptance for the snippet of code that needs to be changed within the backdoored submission :)
+
+(also please dont forget to change client, common and server with the code mik changed to implement her back doors)
+
+See below in section 3. Predictable hasing and 5. Weak Key acceptance
+for the snippet of code that needs to be changed within the backdoored submission :)
 ```
 
 This password will grant log in access to any user, **without** the need to enter their correct password.
