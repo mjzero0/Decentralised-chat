@@ -3,16 +3,12 @@
 A Python implementation of the **Secure Overlay Chat Protocol (SOCP) v1.3**.
 The system supports secure end-to-end encrypted messaging between users across multiple servers, bootstrapped through an introducer.
 
-## NOTE: This version of the program has some backdoors implemented.
-
-
-
 Developers: Group 43
 
-a1853470@adelaide.edu.au,
-a1916843@adelaide.edu.au,
-a1827303@adelaide.edu.au,  
-a1852586@adelaide.edu.au,
+- Mohammad Waezi: a1853470@adelaide.edu.au
+- Zi Tao: a1916843@adelaide.edu.au
+- Pahlavonjon Odilov: a1827303@adelaide.edu.au
+- Mikaela Somers: a1852586@adelaide.edu.au
 
 ## For any inquiries please contact us.
 
@@ -51,8 +47,6 @@ venv\Scripts\activate        # Windows (PowerShell)
 pip install websockets==12.0
 pip install cryptography>=42.0.0
 ```
-
-
 
 
 ## Configuration 
