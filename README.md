@@ -3,6 +3,10 @@
 A Python implementation of the **Secure Overlay Chat Protocol (SOCP) v1.3**.
 The system supports secure end-to-end encrypted messaging between users across multiple servers, bootstrapped through an introducer.
 
+**Repository:** https://github.com/mjzero0/Decentralised-chat  
+**Version:** Final (secure / backdoor-free) 
+
+
 Developers: Group 43
 
 - Mohammad Waezi: a1853470@adelaide.edu.au

