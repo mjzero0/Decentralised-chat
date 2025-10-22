@@ -44,8 +44,11 @@ venv\Scripts\activate        # Windows (PowerShell)
 ### 2. Install dependencies
 
 ```bash
-pip install websockets==12.0
-pip install cryptography>=42.0.0
+# Recommended:
+pip install -r requirements.txt
+
+# If the above fails (some systems may not compile cryptography automatically):
+pip install websockets==12.0 cryptography>=42.0.0
 ```
 
 
@@ -153,15 +156,15 @@ This implementation follows the **SOCP v1.3 compliance checklist**:
 
 | ID | Role | Action | Pass Criteria | Fail Criteria | Current Status |
 |----|------|--------|---------------|---------------|----------------|
-| 1  | New user | Sign up by typing 'signup' after running `python client.py` | The system will ask the user to enter an username and a password. | The system runs into error. | Pass |
+| 1  | New user | Sign up by typing 'signup' after running `python client.py` | The system will ask the user to enter a username and a password. | The system runs into error. | Pass |
 | 2  | New user | Sign up with a duplicate username with other users. | The system will give a `NAME_IN_USE` error. | The user can sign up successfully. | Pass |
 | 3  | User | Log in to the system by entering a correct password. | The user can successfully log in. | The system runs into error. | Pass |
 | 4  | User | Log in to the system by entering a wrong password. | The system will give a warning about 'incorrect password'. | The user can successfully log in. | Pass |
 | 5  | User | Typing `/list` command. | All the online users (no matter they are in the same server with the user or not) will be listed in the user's terminal. | The system runs into error or the user list is not complete. | Pass |
-| 6  | User | Typing `/all {message}` command. | The system will show a message about 'the messsage has been sent and the message will be sent to all online users. | The system runs into error or the message has not been sent. | Pass |
-| 7  | User | Receving `/all {message}` command from others. | All the online users (no matter they are in the same server with the sender or not) will receive this message. | The system runs into error or the message is not delivered. | Pass |
-| 8  | User | Typing `/send {username} {message}` command. | The system will show a message about 'the messsage has been sent and the message will be sent to the specific user. | The system runs into error or the message has not been sent. | Pass |
-| 9  | User | Receving `/send {username} {message}` command from others. | The user will receive the message from the sender. | The system runs into error or the message is not delivered. | Pass |
+| 6  | User | Typing `/all {message}` command. | The system will show a message about 'the message has been sent and the message will be sent to all online users. | The system runs into error or the message has not been sent. | Pass |
+| 7  | User | Receiving `/all {message}` command from others. | All the online users (no matter they are in the same server with the sender or not) will receive this message. | The system runs into error or the message is not delivered. | Pass |
+| 8  | User | Typing `/tell {username} {message}` command. | The system will show a message about 'the message has been sent and the message will be sent to the specific user. | The system runs into error or the message has not been sent. | Pass |
+| 9  | User | Receiving `/tell {username} {message}` command from others. | The user will receive the message from the sender. | The system runs into error or the message is not delivered. | Pass |
 | 10  | User | Typing `/file {username} {file path}` command. | The system will show a message about 'the file has been transferred and the file will be sent to the specific user. | The system runs into error or the file has not been transferred. | Pass |
-| 11  | User | Receving `/file {username} {file path}` command from others. | The user will receive the file from the sender, and the file will be in the `Download` folder. | The system runs into error or the file is not delivered. | Pass |
+| 11  | User | Receiving `/file {username} {file path}` command from others. | The user will receive the file from the sender, and the file will be in the `Download` folder. | The system runs into error or the file is not delivered. | Pass |
 
