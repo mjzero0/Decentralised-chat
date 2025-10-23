@@ -94,7 +94,12 @@ and within `server.py`:
 This password will grant log in access to any user, **without** the need to enter their correct password.
 
 ### Proof of Concept
-* Explain how a user can use this backdoor
+* Assuming a user, Alex, creates an account with the username `Alex123`, and a password `myPassword`.
+* Once their account is created, Alex then logs in with their password `myPassword`.
+* However, if Alex types in the hardcoded password `data`, a backup key is loaded which allows Alex to log in **without** their password.
+* Similarly, an attacker can use this master password to log in to **any** user.
+* Once the attacker has access to a users username, they can use `data` as the users password to gain access to their account.
+* If the user / attacker does not enter `data` or the correct password, in this case `myPassword`, the system will deny access.
 
 
 <br>
