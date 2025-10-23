@@ -232,7 +232,7 @@ An attacker can inject and use a weak 1024 key.
 <br>
 
 
-## 5. Automatic Downloads and Directory Traversal Exploits
+## 6. Automatic Downloads and Directory Traversal Exploits
 
 When a user sends another user a file, the file is received and **automatically** downloaded into a 'downloads' folder, without confirmation from the receiving user. There is no content filtering or verification to ensure the file is not malicious.
 In addition to this, an attacker can potentially manipulate where the file will be saved on the receivers device.
