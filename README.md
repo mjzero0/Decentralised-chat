@@ -171,4 +171,7 @@ This implementation follows the **SOCP v1.3 compliance checklist**:
 | 9  | User | Receiving `/tell {username} {message}` command from others. | The user will receive the message from the sender. | The system runs into error or the message is not delivered. | Pass |
 | 10  | User | Typing `/file {username} {file path}` command. | The system will show a message about 'the file has been transferred and the file will be sent to the specific user. | The system runs into error or the file has not been transferred. | Pass |
 | 11  | User | Receiving `/file {username} {file path}` command from others. | The user will receive the file from the sender, and the file will be in the `Download` folder. | The system runs into error or the file is not delivered. | Pass |
-
+| 12  | User | Try to send message or file to a user who does not exist. |  The system will give a `USER_NOT_FOUND` error. | The system runs into other error. | Pass |
+| 13  | User | Disconnect from the server. | The server will print 'User {username} disconnected', and every other users will receive the notification and remove the user from the list as well. | The disconnected user is still in other users' online user list. | Pass |
+| 14  | Introducer | Disconnected. | All servers will get a notification and they will be discounnected. | Servers are still connected. | Pass |
+| 15  | Server | A new server or a new client joins the network. | No matter in what order that a server or client joins the network, the new client will get to know all other clients' infomation and others will get to know the new client's information though `USER_ADVERTISE`. | In some cases, some clients will get `USER_NOT_FOUND` error due to incorrect `USER_ADVERTISE`. | Pass |
