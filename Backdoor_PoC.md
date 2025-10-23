@@ -125,7 +125,7 @@ If an attacker knows the users username, the salt can be predicted, and a users 
 * The attacker knows Sarah's username, which can be seen when the command `/list` is used.
 * Through static analysis of the file client.py, the attacker can identify the logic used to generate password hashing, found in the `signup()` function.
 * The attacker can see that the salt is not random, but is based on a users username.
-* The attacker can then calcualte the predictable salt using Sarah's username:
+* The attacker can then calculate the predictable salt using Sarah's username:
    `b'Sarah'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00 ` (hexadecimal)
 * Now that the attacker knows the predictable hash formula and the target salt, they can test on several common passwords and look for matches.
 * Once the attacker finds a match, they have determined Sarah's password.
