@@ -153,6 +153,8 @@ This implementation follows the **SOCP v1.3 compliance checklist**:
 
 * All servers must store known user public keys and server public keys for verification.
 * Introducer must be started before any server can join the network.
+* Module level and function level docstrings including **Protocol-alignment annotations** were generated 
+with AI assistance to enhance documentation consistency and traceability.
 
 ---
 
