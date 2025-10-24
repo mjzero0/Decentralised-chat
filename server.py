@@ -21,7 +21,8 @@ from common import (
 # CONFIGURATION
 # -------------------------
 
-INTRODUCER_HOST = "10.13.89.250"
+# Please adjust to the IP of the device running the introducer
+INTRODUCER_HOST = "127.0.0.1"
 INTRODUCER_PORT = 8765
 INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 

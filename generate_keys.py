@@ -1,9 +1,23 @@
+"""
+Key Generator for SOCP Server (RSA-4096)
+
+This script generates a 4096-bit RSA key pair using the `cryptography` library
+and saves them in PEM format:
+
+- Private key → server_priv.pem (unencrypted PKCS#8)
+- Public key → server_pub.pem (SubjectPublicKeyInfo)
+
+Used for server-side transport signing and message verification under SOCP v1.3.
+"""
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 # Generate RSA private key
-private_key = rsa.generate_private_key(public_exponent=65537, key_size=4096)
-
+private_key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=4096
+)
 
 # Save private key to PEM file
 with open("server_priv.pem", "wb") as f:
@@ -15,7 +29,7 @@ with open("server_priv.pem", "wb") as f:
         )
     )
 
-# Save public key to PEM (optional, not required if you're using b64u strings)
+# Save public key to PEM file
 with open("server_pub.pem", "wb") as f:
     f.write(
         private_key.public_key().public_bytes(

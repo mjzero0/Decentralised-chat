@@ -1,19 +1,57 @@
+"""
+SOCP Introducer Server (Bootstrap Node)
+
+Implements the initial bootstrap logic for the Secure Overlay Chat Protocol (SOCP v1.3).
+This Introducer receives SERVER_HELLO_JOIN requests, assigns unique server IDs,
+and returns the known list of other bootstrap servers in the network.
+
+Message Types Handled:
+- SERVER_HELLO_JOIN → assigns server ID, returns SERVER_WELCOME
+
+WebSocket listening address: ws://0.0.0.0:8765
+"""
+
 import asyncio
 import websockets
 import json
 import time
 import uuid
-    
+
 def now_ms():
+    """Return current UNIX timestamp in milliseconds."""
     return int(time.time() * 1000)
 
 def to_json(obj: dict) -> str:
+    """
+    Serialize a Python dictionary into a JSON string with newline.
+
+    Args:
+        obj: Dictionary to serialize.
+
+    Returns:
+        JSON string with newline appended.
+    """
     return json.dumps(obj) + "\n"
 
-connected_servers = {} # server_id -> websocket
-bootstrap_servers = [] # server_id -> (host, port, pubkey)
+# Mapping of connected servers
+connected_servers = {}
+
+# List of known bootstrap servers
+bootstrap_servers = []
 
 async def handle_join(websocket):
+    """
+    Handle incoming WebSocket connection from a joining server.
+
+    Expects:
+        - SERVER_HELLO_JOIN with host, port, and pubkey.
+    
+    Responds with:
+        - SERVER_WELCOME including assigned ID and known bootstrap peers.
+
+    Args:
+        websocket: The incoming WebSocket connection.
+    """
     server_id = None
     try:
         async for msg in websocket:
@@ -26,8 +64,7 @@ async def handle_join(websocket):
                 host = env["payload"]["host"]
                 port = env["payload"]["port"]
                 
-                # server_id is checked within network to verify its uniqueness. If it is, return same ID, 
-                # otherwise return new unique ID
+                # Ensure server_id uniqueness
                 while server_id in connected_servers.keys():
                     server_id = str(uuid.uuid4())
                         
@@ -35,9 +72,14 @@ async def handle_join(websocket):
                 
                 temp_servers = bootstrap_servers.copy()
                 
-                bootstrap_servers.append({"server_id": server_id, "host": host, "port": port, "pubkey": pubkey})
+                bootstrap_servers.append({
+                    "server_id": server_id,
+                    "host": host,
+                    "port": port,
+                    "pubkey": pubkey
+                })
 
-                # Send WELCOME
+                # Send SERVER_WELCOME
                 welcome = {
                     "type": "SERVER_WELCOME",
                     "from": "introducer-0000-0000",
@@ -62,8 +104,12 @@ async def handle_join(websocket):
             print(f"⚠️ Connection closed for {server_id}")
             del connected_servers[server_id]
 
-
 async def start_server():
+    """
+    Start the Introducer WebSocket server on port 8765.
+
+    Binds to 0.0.0.0 and runs the join handler loop indefinitely.
+    """
     print("🌐 Introducer running on ws://localhost:8765")
     async with websockets.serve(handle_join, "0.0.0.0", 8765):
         await asyncio.Future()  # run forever
