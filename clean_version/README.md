@@ -37,7 +37,13 @@ Developers: Group 43
 
 ## Setup
 
-### 1. Create a virtual environment and activate it (optional)
+### 1. Change directory to the `clean_version` folder
+
+```bash
+cd clean_version
+```
+
+### 2. Create a virtual environment and activate it (optional)
 
 ```bash
 python -m venv venv
@@ -45,7 +51,7 @@ source venv/bin/activate     # macOS/Linux
 venv\Scripts\activate        # Windows (PowerShell)
 ```
 
-### 2. Install dependencies
+### 3. Install dependencies
 
 ```bash
 # Recommended:
