@@ -1,3 +1,20 @@
+"""
+SOCP Server Implementation (Secure Overlay Chat Protocol v1.3)
+
+This server handles:
+- User registration and authentication via HMAC challenge-response (§9.1)
+- WebSocket message routing for direct messages and files (§9.2, §9.4)
+- Server ↔ Server gossip: presence, message delivery, and public channel updates (§8.2, §9.3)
+- Bootstrap handshake with introducer node (§8.1)
+- RSA-4096 for transport signing and end-to-end message security (§4, §12)
+
+Persistent state:
+- Users stored in users_db.json
+- Keys loaded from PEM file
+
+In-memory routing tables follow SOCP §5.2.
+"""
+
 import asyncio
 import websockets
 import json
@@ -17,10 +34,6 @@ from common import (
     make_signed_envelope
 )
 
-# -------------------------
-# CONFIGURATION
-# -------------------------
-
 # Please adjust to the IP of the device running the introducer
 INTRODUCER_HOST = "127.0.0.1"
 INTRODUCER_PORT = 8765
@@ -29,13 +42,13 @@ INTRODUCER_ADDR = f"{INTRODUCER_HOST}:{INTRODUCER_PORT}"
 MY_HOST = os.getenv("MY_HOST", "10.13.83.192")
 MY_PORT = int(os.getenv("MY_PORT", "9001"))
 
-# -------------------------
-# SERVER KEY
-# -------------------------
 SERVER_PRIVKEY = None
 SERVER_PUB_B64U = None
 
 def load_server_keys(priv_path="server_priv.pem"):
+    """
+    Load the RSA-4096 private key from PEM and compute its public key (base64url).
+    """
     global SERVER_PRIVKEY, SERVER_PUB_B64U
     with open(priv_path, "rb") as f:
         pem = f.read()
@@ -43,18 +56,21 @@ def load_server_keys(priv_path="server_priv.pem"):
     SERVER_PUB_B64U = public_key_b64u_from_private(SERVER_PRIVKEY)
     print("🔑 Loaded server key pair.")
 
-# -------------------------
-# DB (for user register/login)
-# -------------------------
 DB_FILE = "users_db.json"
 
 def load_db():
+    """
+    Load the user database from disk (or return empty if missing).
+    """
     if not os.path.exists(DB_FILE):
         return {"users": {}}
     with open(DB_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def save_db(db):
+    """
+    Save the user database atomically.
+    """
     tmp = DB_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(db, f, indent=2)
@@ -62,9 +78,7 @@ def save_db(db):
 
 db = load_db()
 
-# -------------------------
-# In-memory tables (§5.2)
-# -------------------------
+
 servers = {}           # server_id -> websocket
 server_addrs = {}      # server_id -> (host, port)
 server_pubkeys = {}    # server_id -> pubkey_b64u
@@ -73,24 +87,23 @@ user_locations = {}    # user_id -> "local" | server_id
 pending_auth = {}      # websocket -> {"username": str, "nonce": bytes}
 seen_ids = set()      
 
-# -------------------------
-# PUBLIC CHANNEL
-# -------------------------
 public_channel_members = set()   # All users in the public channel
 public_channel_version = 0       # Incremented with each update
 
-server_id = None  # assigned after SERVER_WELCOME
+server_id = None 
 
-# -------------------------
-# UTILS
-# -------------------------
 def now_ms():
+    """Return current timestamp in milliseconds."""
     return int(time.time() * 1000)
 
 def base64url_encode(b: bytes) -> str:
+    """Base64url encode a byte string (no padding)."""
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
 async def sign_and_send(ws, msg):
+    """
+    Sign the payload in-place (if key available) and send as JSON over websocket.
+    """
     if "payload" not in msg:
         msg["payload"] = {}
     if SERVER_PRIVKEY:
@@ -104,6 +117,9 @@ async def sign_and_send(ws, msg):
     await ws.send(json.dumps(msg))
 
 def dedup_or_remember(env: dict) -> bool:
+    """
+    Return True if message has already been seen; otherwise store and return False.
+    """
     fp = frame_fingerprint(env)
     if fp in seen_ids:
         return True
@@ -114,10 +130,10 @@ def dedup_or_remember(env: dict) -> bool:
         seen_ids.update(seen_ids_copy)
     return False
 
-# -------------------------
-# BROADCAST
-# -------------------------
 async def broadcast(msg):
+    """
+    Broadcast a message to all connected local users (except sender).
+    """
     dead = []
     for uid, info in local_users.items():
         payload = msg.get("payload")
@@ -131,6 +147,9 @@ async def broadcast(msg):
         local_users.pop(uid, None)
         
 async def gossip_servers(msg, exclude: set[str] | None = None):
+    """
+    Forward message to all connected servers, optionally excluding some.
+    """
     exclude = exclude or set()
     dead = []
     for sid, ws in servers.items():
@@ -145,10 +164,11 @@ async def gossip_servers(msg, exclude: set[str] | None = None):
         server_addrs.pop(sid, None)
         server_pubkeys.pop(sid, None)
 
-# -------------------------
-# USER REGISTER / LOGIN
-# -------------------------
+
 async def handle_user_register(ws, env):
+    """
+    Handle USER_REGISTER frame and persist user credentials in DB.
+    """
     payload = env.get("payload", {})
     username = payload.get("username")
     salt_hex = payload.get("salt")
@@ -184,6 +204,9 @@ async def handle_user_register(ws, env):
     print(f"🆕 Registered user '{username}' ({user_id[:8]}…)")
 
 async def handle_auth_hello(ws, env):
+    """
+    Begin HMAC challenge-response authentication.
+    """
     username = env["payload"].get("username")
     if not username or username not in db["users"]:
         await send_error(ws, "USER_NOT_FOUND", "Unknown username")
@@ -202,6 +225,9 @@ async def handle_auth_hello(ws, env):
 
 
 async def handle_auth_response(ws, env):
+    """
+    Validate HMAC proof, assign session, send USER_ADVERTISE and AUTH_OK.
+    """
     
     if ws not in pending_auth:
         await send_error(ws, "INVALID_SIG", "No pending challenge")
@@ -234,7 +260,7 @@ async def handle_auth_response(ws, env):
 
     now = now_ms()
 
-    # 1. Tell new user about existing users
+    # Tell new user about existing users
     for uid, info in list(local_users.items()):
         if uid == user_id:
             continue
@@ -255,7 +281,7 @@ async def handle_auth_response(ws, env):
         }
         await sign_and_send(ws, advertise_existing)
 
-    # 2. Tell all others about new user
+    # Tell all others about new user
     advertise_new = {
         "type": "USER_ADVERTISE",
         "from": server_id,
@@ -281,7 +307,7 @@ async def handle_auth_response(ws, env):
         except Exception:
             pass
 
-    # 3. Return AUTH_OK
+    # Return AUTH_OK
     ok = {
         "type": "AUTH_OK",
         "from": "server",
@@ -295,7 +321,6 @@ async def handle_auth_response(ws, env):
     pending_auth.pop(ws, None)
     print(f"✅ '{username}' authenticated ({user_id[:8]}…)")
     
-    # --- join public channel ---
     global public_channel_version
     public_channel_members.add(user_id)
     public_channel_version += 1
@@ -326,11 +351,10 @@ async def handle_auth_response(ws, env):
     }
     await gossip_servers(msg_updated) 
 
-# -------------------------
-# MESSAGE ROUTING
-# -------------------------
-
 async def handle_msg_direct(env):
+    """
+    Route direct messages or file transfers to local or remote users.
+    """
     from_user = env["from"]
     to_user = env["to"]
 
@@ -351,7 +375,7 @@ async def handle_msg_direct(env):
         await sign_and_send(local_users[to_user]["ws"], deliver)
 
     else:
-        # get connected server id - dest
+        # get connected server id
         dest = user_locations.get(to_user)
         if dest and dest in servers:
             forward = {
@@ -360,7 +384,7 @@ async def handle_msg_direct(env):
                 "to": dest,
                 "ts": env["ts"],
                 "payload": {
-                    "inner_type": env["type"],   # MSG_DIRECT / FILE_START / FILE_CHUNK / FILE_END
+                    "inner_type": env["type"],
                     "user_id": to_user,
                     **env["payload"]
                 },
@@ -370,10 +394,10 @@ async def handle_msg_direct(env):
         else:
             print(f"❌ USER_NOT_FOUND {to_user}")
 
-# -------------------------
-# ERROR
-# -------------------------
 async def send_error(ws, code, detail):
+    """
+    Send a protocol-compliant ERROR frame.
+    """
     msg = {
         "type": "ERROR",
         "from": "server",
@@ -384,14 +408,14 @@ async def send_error(ws, code, detail):
     }
     await sign_and_send(ws, msg)
 
-# -------------------------
-# SERVER HANDSHAKE / GOSSIP
-# -------------------------
-
 def to_json(envelope: dict) -> str:
+    """Convert a dictionary to JSON string."""
     return json.dumps(envelope)
 
 async def connect_to_other_server(host, port, _server_id):
+    """
+    Establish connection and send SERVER_HELLO_LINK to another known server.
+    """
     uri = f"ws://{host}:{port}"
     try:
         ws = await websockets.connect(uri)
@@ -410,6 +434,9 @@ async def connect_to_other_server(host, port, _server_id):
         print(f"❌ Failed to connect to {_server_id}: {e}")
 
 async def handle_server_welcome(envelope: dict):
+    """
+    Handle SERVER_WELCOME from introducer and connect to peer servers.
+    """
     introducer_id = envelope["from"]
     pubkey = envelope["payload"].get("pubkey")
     if pubkey:
@@ -428,7 +455,6 @@ async def handle_server_welcome(envelope: dict):
         if client == []:
             break
         else:
-            # this user_id is the server_id of other servers
             user_id = client["server_id"]
             server_addrs[user_id] = (client["host"], client["port"])
             server_pubkeys[user_id] = client["pubkey"]
@@ -438,12 +464,9 @@ async def handle_server_welcome(envelope: dict):
         host, port = addr
         await connect_to_other_server(host, port, key)
         
-
-# -------------------------
-# SERVER↔SERVER LINKS
-# -------------------------
     
 async def make_server_announce(to_id: str, host: str, port: int, pubkey_b64u: str) -> dict:
+    """Construct a SERVER_ANNOUNCE frame."""
     return make_signed_envelope(
         "SERVER_ANNOUNCE", server_id, to_id,
         {"host": host, "port": port, "pubkey": pubkey_b64u},
@@ -451,6 +474,7 @@ async def make_server_announce(to_id: str, host: str, port: int, pubkey_b64u: st
     )
 
 async def make_server_hello_link(to_sid: str) -> dict:
+    """Construct a SERVER_HELLO_LINK frame."""
     return {
         "type": "SERVER_HELLO_LINK",
         "from": server_id,
@@ -465,6 +489,7 @@ async def make_server_hello_link(to_sid: str) -> dict:
     }
 
 async def handle_server_announce(envelope: dict):
+    """Handle and validate SERVER_ANNOUNCE from peer."""
     from_id = envelope.get("from")
     payload = envelope.get("payload", {})
     host = payload.get("host")
@@ -489,7 +514,8 @@ async def handle_server_announce(envelope: dict):
     
 
 async def handle_server_deliver(envelope):
-    # Forward to the server where the recipient lives (or deliver locally)
+    """Forward SERVER_DELIVER message to local client if online."""
+    # Forward to the server where the recipient lives
     target_user = envelope["payload"]["user_id"]
     
     if target_user not in local_users:
@@ -516,15 +542,11 @@ async def handle_server_deliver(envelope):
                 "payload": envelope["payload"],
                 "sig": ""
             }
-        # print(f"deliver: {deliver["type"]}")
         if deliver:
             await sign_and_send(local_users[target_user]["ws"], deliver)
 
-# -------------------------
-# PRESENCE / GOSSIP
-# -------------------------
-
 async def handle_user_advertise(envelope):
+    """Handle USER_ADVERTISE and forward it via gossip."""
     if dedup_or_remember(envelope):
         return
 
@@ -532,12 +554,6 @@ async def handle_user_advertise(envelope):
     payload = envelope["payload"]
     user_id = payload["user_id"]
     src_server = payload["server_id"]
-    
-    # TODO:
-    # if sender in server_pubkeys:
-    #     if not verify_transport_sig(envelope, server_pubkeys[sender]):
-    #         print(f"❌ Invalid signature on USER_ADVERTISE from {sender}")
-    #         return
     
     to_someone = envelope.get("to")
     # receieve the USER_ADVERTISE that needs to be send to one of my user, and store the user to user_location
@@ -577,18 +593,17 @@ async def handle_user_advertise(envelope):
             }
             await sign_and_send(servers[src_server], advertise_existing)
 
-    # Gossip forward to other servers (except origin if we have a direct link to it)
+    # Gossip forward to other servers
     for sid, ws in servers.items():
         if sid == server_id or sid == sender:
             continue
         try:
-            # no need to use sign and send - just gossip
-            # await sign_and_send(ws, envelope)
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_ADVERTISE to {sid} failed: {e}")
 
 async def handle_user_remove(envelope):
+    """Handle USER_REMOVE and forward to peers."""
     if dedup_or_remember(envelope):
         return
 
@@ -620,12 +635,12 @@ async def handle_user_remove(envelope):
         if sid == server_id or sid == sender:
             continue
         try:
-            # await sign_and_send(ws, envelope)
             await ws.send(json.dumps(envelope))
         except Exception as e:
             print(f"❌ Gossip USER_REMOVE to {sid} failed: {e}")
             
 async def broadcast_user_remove(user_id: str):
+    """Send USER_REMOVE to all peer servers."""
     payload = {"user_id": user_id, "server_id": server_id}
     envelope = {
                 "type": "USER_REMOVE",
@@ -645,10 +660,8 @@ async def broadcast_user_remove(user_id: str):
         except Exception as e:
             print(f"❌ Failed to send USER_REMOVE to {sid}: {e}")
             
-# -------------------------
-# INTRODUCER CONNECTION
-# -------------------------
 async def make_server_hello_join() -> dict:
+    """Construct SERVER_HELLO_JOIN frame to introducer."""
     tmp_id = str(uuid.uuid4())
     payload = {"host": MY_HOST, "port": MY_PORT, "pubkey": SERVER_PUB_B64U}
     sig = sign_transport_payload(SERVER_PRIVKEY, payload)
@@ -662,6 +675,7 @@ async def make_server_hello_join() -> dict:
     }
 
 async def join_network():
+    """Join the SOCP network via introducer handshake."""
     try:
         hello = await make_server_hello_join()
         uri = f"ws://{INTRODUCER_HOST}:{INTRODUCER_PORT}"
@@ -681,10 +695,10 @@ async def join_network():
     except websockets.exceptions.ConnectionClosedOK:
         print("✅ Introducer closed connection (1000): normal after welcome.")
 
-# -------------------------
-# CLIENT HANDLER
-# -------------------------
 async def handle_client(ws):
+    """
+    Handle incoming WebSocket connection from a user or server.
+    """
     try:
         async for raw in ws:
             env = json.loads(raw)
@@ -734,7 +748,6 @@ async def handle_client(ws):
                     public_channel_members.add(u)
 
             elif mtype == "PUBLIC_CHANNEL_UPDATED":
-                # Receive the version number, record it first; wrap it and wait for you to do KEY_SHARE before using it
                 pv = env.get("payload", {}).get("version")
                 if isinstance(pv, int):
                     global public_channel_version
@@ -765,10 +778,9 @@ async def handle_client(ws):
             await broadcast(rm)
             await broadcast_user_remove(drop_uid)
 
-# -------------------------
-# MAIN
-# -------------------------
+
 async def main():
+    """Launch local server and begin introducer join handshake."""
     print(f"🚀 Starting WebSocket server on {MY_HOST}:{MY_PORT}")
     ws_server = await websockets.serve(handle_client, MY_HOST, MY_PORT)
     await join_network()
