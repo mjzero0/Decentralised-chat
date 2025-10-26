@@ -1,6 +1,7 @@
 # Decentralised Chat — SOCP v1.3 (Group 43)
 
 A Python implementation of the Secure Overlay Chat Protocol (SOCP) v1.3.
+---
 Repository: https://github.com/mjzero0/Decentralised-chat
 
 **Group 43 — Developers**
