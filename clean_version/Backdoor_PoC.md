@@ -49,6 +49,7 @@ elif cmd == "/list":
 Please see appendix 5 in the reflective report for screenshots of this backdoor in use.
 
 <br>
+
 ## 2. Secret Password login Override
 A hardcoded **secret password** exists, that allows an attacker to log in as **any user**.
 
