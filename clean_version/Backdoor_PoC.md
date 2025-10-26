@@ -45,9 +45,10 @@ elif cmd == "/list":
 * Any messages sent to the username `Sarah1` will go to **both** Sarah and the malicious user.
 * The malicious user is now essentially **impersonating** Sarah and will receive a duplicate of all communications meant for Sarah.
 * This is not limited to one malicious user; any number of users can signup with the same username and achieve the same impersonation.
-<br>
+
 Please see appendix 5 in the reflective report for screenshots of this backdoor in use.
 
+<br>
 ## 2. Secret Password login Override
 A hardcoded **secret password** exists, that allows an attacker to log in as **any user**.
 
