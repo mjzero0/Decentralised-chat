@@ -46,7 +46,7 @@ elif cmd == "/list":
 * The malicious user is now essentially **impersonating** Sarah and will receive a duplicate of all communications meant for Sarah.
 * This is not limited to one malicious user; any number of users can signup with the same username and achieve the same impersonation.
 <br>
-
+Please see appendix 5 in the reflective report for screenshots of this backdoor in use.
 
 ## 2. Secret Password login Override
 A hardcoded **secret password** exists, that allows an attacker to log in as **any user**.
@@ -100,7 +100,8 @@ This password will grant log in access to any user, **without** the need to ente
 * Similarly, an attacker can use this **master password** to log in as Alex, or as **any** user.
 * Once the attacker has access to a user's username, they can enter `data` as the user's password to gain access to their account.
 * If the user / attacker does not enter `data` or the correct password, in this case `myPassword`, the system will deny access.
-
+  
+Please see appendix 5 in the reflective report for screenshots of this backdoor in use.
 
 <br>
 
