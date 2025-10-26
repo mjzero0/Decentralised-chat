@@ -13,7 +13,7 @@ A Python implementation of the Secure Overlay Chat Protocol (SOCP) v1.3.
 ## Layout
 - `clean_version/` — **Backdoor-free** final code. See `clean_version/README.md` for full run & test instructions.  
 - `backdoor_version/` — Intentionally **vulnerable** version + PoC scripts. **NOTE** Use an isolated VM.  
-- `reflective_commentary.pdf` — main report for marking.
+- `Reflective_Commentary_Group_43.pdf` — main report for marking.
 
 ---
 
